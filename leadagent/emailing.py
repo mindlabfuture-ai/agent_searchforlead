@@ -107,19 +107,25 @@ Reply lang po kayo sa email na ito at ipapadala ko.
 {sender}
 {company}"""
 
-# The offer. First line is the heading, each "- " line is a bullet (the HTML email turns these into a card).
-# These are commitments made in your name: keep them exactly as you will honour them.
+# The offer. First line is the heading, each "- " line is a bullet (the HTML email turns these into a card),
+# each "Note: " line is small print under the card. These are commitments made in your name: keep them
+# exactly as you will honour them.
+# The store is built as a Shopify "client transfer store" and handed over, which is how Shopify attributes the
+# referral. Shopify says transferred stores are NOT eligible for promotions or free trials, so there is
+# deliberately no "$1/month" claim here.
 OFFER_EN = """Here's the offer:
-- Shopify's new-store deal: $1/month for your first 3 months if you're new to Shopify, then the regular plan price.
-- Free store design: I design it for you, with POPLoad (Basic plan, up to 50 payment-receipt uploads) so customers can pay by GCash, Maya or bank transfer and upload their receipt.
-- Money-back guarantee: if your store makes no sales in those 3 months, I'll refund the Shopify fees you paid.
-Note: your own domain name (like yourshop.com) isn't included. You can buy one or connect one you already own. If you'd rather not, I can set your store up for free on a subdomain such as yourshop.mindlabfuture-ai.com, and you can switch to your own domain anytime."""
+- Free store build: I design and set up your store, with POPLoad (Basic plan, up to 50 payment-receipt uploads) so customers can pay by GCash, Maya or bank transfer and upload their receipt. When it's ready I hand it over and you own the store and the account.
+- Your Shopify plan: you choose and pay for your plan directly when you take over the store. I'll recommend the one that fits, no upsell.
+- Money-back guarantee: if your store makes no sales in its first 3 months, I'll refund the Shopify fees you paid.
+Note: your own domain name (like yourshop.com) isn't included. You can buy one or connect one you already own. If you'd rather not, I can set your store up for free on a subdomain such as yourshop.mindlabfuture-ai.com, and you can switch to your own domain anytime.
+Note: as a Shopify Partner I may earn a referral fee from Shopify when you subscribe. It costs you nothing extra."""
 
 OFFER_TL = """Ito po ang offer:
-- Shopify new-store deal: $1/buwan sa unang 3 buwan kung bago pa kayo sa Shopify, tapos regular plan price na po.
-- Libreng store design: ako po ang magdidisenyo, kasama ang POPLoad (Basic plan, hanggang 50 receipt uploads) para makapagbayad ang customers via GCash, Maya o bank transfer at mag-upload ng resibo.
-- Money-back guarantee: kung walang sales ang store ninyo sa loob ng 3 buwan, ire-refund ko po ang binayad ninyo sa Shopify.
-Note: hindi po kasama ang sariling domain name (hal. yourshop.com). Pwede kayong bumili o gamitin ang meron na kayo. Kung ayaw po muna, libre ko pong i-set up ang store sa subdomain tulad ng yourshop.mindlabfuture-ai.com, at pwede kayong lumipat sa sariling domain anumang oras."""
+- Libreng store build: ako po ang magdidisenyo at mag-se-set up ng store ninyo, kasama ang POPLoad (Basic plan, hanggang 50 receipt uploads) para makapagbayad ang customers via GCash, Maya o bank transfer at mag-upload ng resibo. Kapag ready na, ibibigay ko po ito sa inyo at kayo ang may-ari ng store at account.
+- Shopify plan ninyo: kayo po ang pipili at magbabayad ng plan nang direkta sa Shopify kapag kayo na ang may hawak ng store. Irerekomenda ko po ang pinakaangkop, walang pilitan.
+- Money-back guarantee: kung walang sales ang store ninyo sa unang 3 buwan, ire-refund ko po ang binayad ninyo sa Shopify.
+Note: hindi po kasama ang sariling domain name (hal. yourshop.com). Pwede kayong bumili o gamitin ang meron na kayo. Kung ayaw po muna, libre ko pong i-set up ang store sa subdomain tulad ng yourshop.mindlabfuture-ai.com, at pwede kayong lumipat sa sariling domain anumang oras.
+Note: bilang Shopify Partner, maaari po akong makatanggap ng referral fee mula sa Shopify kapag nag-subscribe kayo. Wala po itong dagdag na bayad sa inyo."""
 
 EXTRA_EN =" A store of your own also means no marketplace fees, and your customers' details are yours."
 EXTRA_TL = " Kapag may sariling store, walang marketplace fees at sa inyo po ang customer details."
@@ -155,8 +161,8 @@ def build_email(lead, base_url, now=None):
     html = emailtemplate.render_html(
         subject=subject, greeting=greeting, found=found, pitch=pitch, ask=ask, reply=reply_line,
         signature=signature.split("\n"), callout=callout, offer_title=offer_title, offer_items=offer_items, offer_notes=offer_notes,
-        preheader=("Libreng store design, Shopify sa $1/buwan, at money-back guarantee." if tl else
-                   "Free store design, Shopify at $1/month for 3 months, and a money-back guarantee."),
+        preheader=("Libreng Shopify store build para sa GCash at Maya, may money-back guarantee." if tl else
+                   "A free Shopify store build set up for GCash and Maya, with a money-back guarantee."),
         cta_label="Gusto ko ng libreng preview" if tl else "Get my free store preview",
         cta_mailto=emailtemplate.cta_mailto(reply, name, tl),
         unsub_url=unsub, source=source, company=company, address=address,
