@@ -24,8 +24,27 @@ def _p(text, color=TEXT, size=16, extra=""):
             f"{E(text)}</p>")
 
 
+def _offer_item(text):
+    """Bold the lead-in before a short 'Label: ...' so the three terms are scannable."""
+    head, sep, rest = text.partition(": ")
+    body = f"<strong style=\"color:{BRASS_HI};font-weight:600\">{E(head)}:</strong> {E(rest)}" if sep and len(head) <= 40 else E(text)
+    return (f"<tr><td width=\"22\" valign=\"top\" style=\"padding:0 0 10px;font-size:15px;line-height:1.55;color:{BRASS}\">&#10003;</td>"
+            f"<td style=\"padding:0 0 10px;font-family:{BODY};font-size:15px;line-height:1.55;color:{TEXT}\">{body}</td></tr>")
+
+
+def _offer_card(title, items):
+    if not items:
+        return ""
+    rows = "".join(_offer_item(i) for i in items)
+    return (f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:8px 0 20px\"><tr>"
+            f"<td bgcolor=\"{CARD2}\" style=\"background:{CARD2};border:1px solid {BRASS};border-radius:14px;padding:20px 22px 10px\">"
+            f"<div style=\"margin:0 0 12px;font-family:{HEAD};font-size:17px;font-weight:600;letter-spacing:-0.01em;color:{BRASS_HI}\">{E(title.rstrip(':'))}</div>"
+            f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">{rows}</table></td></tr></table>")
+
+
 def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signature, cta_label, cta_mailto,
-                unsub_url, source, company, address, callout="", logo_url=LOGO_URL, site_url=SITE_URL):
+                unsub_url, source, company, address, callout="", offer_title="", offer_items=(),
+                logo_url=LOGO_URL, site_url=SITE_URL):
     chips = "".join(
         f"<td class=\"stack\" width=\"33%\" valign=\"top\" style=\"padding:0 4px 8px\">"
         f"<table role=\"presentation\" width=\"100%\" height=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>"
@@ -62,7 +81,7 @@ def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signa
 <h1 class="h1" style="margin:0 0 20px;font-family:{HEAD};font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-0.02em;color:{TEXT}">{E(subject)}</h1>
 {_p(greeting)}{_p(found)}{_p(pitch)}{callout_html}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 12px"><tr>{chips}</tr></table>
-{_p(ask)}
+{_offer_card(offer_title, offer_items)}{_p(ask)}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 22px"><tr>
 <td align="center" bgcolor="{BRASS}" style="border-radius:999px;background:{BRASS};background-image:linear-gradient(180deg,{BRASS_HI},{BRASS})">
 <a href="{E(cta_mailto)}" style="display:inline-block;padding:15px 28px;font-family:{BODY};font-size:15px;font-weight:600;color:{BRASS_INK};text-decoration:none;border-radius:999px">{E(cta_label)}</a></td></tr></table>

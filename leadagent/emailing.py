@@ -83,6 +83,8 @@ I found {where} and liked what you're selling.
 
 I'm {sender} from {company}, a Shopify Partner in Taguig. We set up simple online stores for Filipino sellers: product pages, GCash/Maya/bank transfer checkout and shipping, so customers can order without messaging back and forth.{extra}
 
+{offer}
+
 Would you like a free preview of what a basic store for {name} could look like? You would own the store and the account.
 
 Just reply to this email and I'll send it over.
@@ -96,6 +98,8 @@ Nakita ko po {where} at nagustuhan ko ang products ninyo.
 
 Ako po si {sender} ng {company}, Shopify Partner sa Taguig. Tumutulong po kami mag-set up ng simpleng online store para sa Filipino sellers: product pages, GCash/Maya/bank transfer checkout at shipping, para hindi na po kailangan ng back-and-forth sa DM.{extra}
 
+{offer}
+
 Gusto po ba ninyong makita ang libreng preview ng basic store para sa {name}? Sa inyo po ang store at account.
 
 Reply lang po kayo sa email na ito at ipapadala ko.
@@ -103,7 +107,19 @@ Reply lang po kayo sa email na ito at ipapadala ko.
 {sender}
 {company}"""
 
-EXTRA_EN = " A store of your own also means no marketplace fees, and your customers' details are yours."
+# The offer. First line is the heading, each "- " line is a bullet (the HTML email turns these into a card).
+# These are commitments made in your name: keep them exactly as you will honour them.
+OFFER_EN = """Here's the offer:
+- Shopify's new-store deal: $1/month for your first 3 months if you're new to Shopify, then the regular plan price.
+- Free store design: I design it for you, with POPLoad (Basic plan, up to 50 payment-receipt uploads) so customers can pay by GCash, Maya or bank transfer and upload their receipt.
+- Money-back guarantee: if your store makes no sales in those 3 months, I'll refund the Shopify fees you paid."""
+
+OFFER_TL = """Ito po ang offer:
+- Shopify new-store deal: $1/buwan sa unang 3 buwan kung bago pa kayo sa Shopify, tapos regular plan price na po.
+- Libreng store design: ako po ang magdidisenyo, kasama ang POPLoad (Basic plan, hanggang 50 receipt uploads) para makapagbayad ang customers via GCash, Maya o bank transfer at mag-upload ng resibo.
+- Money-back guarantee: kung walang sales ang store ninyo sa loob ng 3 buwan, ire-refund ko po ang binayad ninyo sa Shopify."""
+
+EXTRA_EN =" A store of your own also means no marketplace fees, and your customers' details are yours."
 EXTRA_TL = " Kapag may sariling store, walang marketplace fees at sa inyo po ang customer details."
 
 
@@ -117,7 +133,8 @@ def build_email(lead, base_url, now=None):
     where = f"your {db.LABELS.get(lead['platform'], 'page')} ({lead['url']})"
     marketplace = lead["platform"] in db.MARKETPLACES
     extra = (EXTRA_TL if tl else EXTRA_EN) if marketplace else ""
-    body = (TL if tl else EN).format(name=name, where=where, sender=sender, company=company, extra=extra)
+    offer = OFFER_TL if tl else OFFER_EN
+    body = (TL if tl else EN).format(name=name, where=where, sender=sender, company=company, extra=extra, offer=offer)
     unsub = f"{base_url}/unsubscribe?t={unsub_token(lead['email'])}"
     source = lead["email_source"] or "your public listing"
     footer = (f"\n\n--\nYou're getting this one-time message because this business address is publicly listed "
@@ -125,15 +142,18 @@ def build_email(lead, base_url, now=None):
     text = body + footer
     reply = config.env("SENDER_EMAIL", "support@mindlabfuture-ai.com")
     subject = f"A simple online store for {name}"
-    # Paragraphs of the template: greeting, found-you, pitch, ask, reply line, signature.
-    greeting, found, pitch, ask, reply_line, signature = body.split("\n\n")
+    # Paragraphs of the template: greeting, found-you, pitch, offer, ask, reply line, signature.
+    greeting, found, pitch, offer_block, ask, reply_line, signature = body.split("\n\n")
+    offer_title, *offer_items = offer_block.split("\n")
+    offer_items = [i[2:] for i in offer_items if i.startswith("- ")]
     callout = ""
     if marketplace:  # show the marketplace point as its own callout rather than burying it in the pitch
         pitch, callout = pitch.replace(extra, ""), extra.strip()
     html = emailtemplate.render_html(
         subject=subject, greeting=greeting, found=found, pitch=pitch, ask=ask, reply=reply_line,
-        signature=signature.split("\n"), callout=callout,
-        preheader=f"A free preview of a basic Shopify store for {name}. You'd own the store and the account.",
+        signature=signature.split("\n"), callout=callout, offer_title=offer_title, offer_items=offer_items,
+        preheader=("Libreng store design, Shopify sa $1/buwan, at money-back guarantee." if tl else
+                   "Free store design, Shopify at $1/month for 3 months, and a money-back guarantee."),
         cta_label="Gusto ko ng libreng preview" if tl else "Get my free store preview",
         cta_mailto=emailtemplate.cta_mailto(reply, name, tl),
         unsub_url=unsub, source=source, company=company, address=address,
