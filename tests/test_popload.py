@@ -24,11 +24,11 @@ def fetcher(pages):
     return fetch
 
 
-def prospect(con, status="verified", email="hello@glowph.com"):
-    popload.add_rows(con, [{"name": "Glow PH", "website": "www.glowph.com", "niche": "skincare", "claim": "x"}])
-    con.execute("UPDATE prospects SET status=?, email=?, pay_methods='GCash, bank transfer', platform='has_shopify', pay_level='proof'", (status, email))
+def prospect(con, status="verified", email="hello@glowph.com", name="Glow PH", website="www.glowph.com"):
+    popload.add_rows(con, [{"name": name, "website": website, "niche": "skincare", "claim": "x"}])
+    con.execute("UPDATE prospects SET status=?, email=?, pay_methods='GCash, bank transfer', platform='has_shopify', pay_level='proof' WHERE name=?", (status, email, name))
     con.commit()
-    return con.execute("SELECT * FROM prospects").fetchone()
+    return con.execute("SELECT * FROM prospects WHERE name=?", (name,)).fetchone()
 
 
 @mock.patch.dict(os.environ, ENV)
@@ -90,7 +90,8 @@ class SequenceTests(unittest.TestCase):
         con = mem(); prospect(con)
         self.assertEqual(self.sent(con)[0], 0)
 
-    def test_three_steps_on_schedule_once_each(self):
+    @mock.patch.dict(os.environ, {"POPLOAD_DEMO_URL": "https://loom.example/abc"})
+    def test_four_touches_on_schedule_once_each(self):
         con = mem(); p = prospect(con)
         self.assertIn("Approved", popload.apply_action(con, p["id"], "approve"))
         n, calls = self.sent(con); self.assertEqual(n, 1)
@@ -98,9 +99,36 @@ class SequenceTests(unittest.TestCase):
         self.assertIn("List-Unsubscribe", calls[0][0]["headers"])
         self.assertEqual(self.sent(con)[0], 0)                                  # same day: nothing more
         self.assertEqual(self.sent(con, NOW + timedelta(days=2))[0], 0)
-        n, calls = self.sent(con, NOW + timedelta(days=5)); self.assertEqual((n, calls[0][1]), (1, f"prospect-{p['id']}-how_it_works"))
-        n, calls = self.sent(con, NOW + timedelta(days=12)); self.assertEqual((n, calls[0][1]), (1, f"prospect-{p['id']}-last_note"))
-        self.assertEqual(self.sent(con, NOW + timedelta(days=20))[0], 0)
+        n, calls = self.sent(con, NOW + timedelta(days=5)); self.assertEqual((n, calls[0][1]), (1, f"prospect-{p['id']}-reminder"))
+        n, calls = self.sent(con, NOW + timedelta(days=9)); self.assertEqual((n, calls[0][1]), (1, f"prospect-{p['id']}-demo"))
+        n, calls = self.sent(con, NOW + timedelta(days=15)); self.assertEqual((n, calls[0][1]), (1, f"prospect-{p['id']}-last_note"))
+        self.assertEqual(self.sent(con, NOW + timedelta(days=30))[0], 0)
+
+    def test_demo_step_is_skipped_without_a_video_and_links_it_with_one(self):
+        con = mem(); p = prospect(con); popload.apply_action(con, p["id"], "approve"); self.sent(con)
+        self.sent(con, NOW + timedelta(days=5))
+        with mock.patch.dict(os.environ, {"POPLOAD_DEMO_URL": ""}):
+            n, calls = self.sent(con, NOW + timedelta(days=9))                  # demo skipped, nothing due
+            self.assertEqual(n, 0)
+        self.assertEqual(con.execute("SELECT status FROM prospect_steps WHERE step='demo'").fetchone()[0], "skipped")
+        con = mem(); p = prospect(con)
+        with mock.patch.dict(os.environ, {"POPLOAD_DEMO_URL": "https://loom.example/abc"}):
+            m = popload.build_message(p, "demo", "https://leads.example.app")
+        self.assertIn("https://loom.example/abc", m["html"]); self.assertIn("Watch it here: https://loom.example/abc", m["text"])
+
+    def test_prospects_approved_before_a_step_existed_still_get_it(self):
+        con = mem(); p = prospect(con); popload.apply_action(con, p["id"], "approve")
+        con.execute("DELETE FROM prospect_steps WHERE step IN ('reminder','demo')"); con.commit()
+        self.sent(con); n, calls = self.sent(con, NOW + timedelta(days=5))
+        self.assertEqual(calls[0][1], f"prospect-{p['id']}-reminder")
+
+    def test_highest_fit_goes_first_when_the_cap_is_short(self):
+        con = mem(); a = prospect(con, name="Low", website="low.ph", email="a@low.ph"); b = prospect(con, name="Hot", website="hot.ph", email="a@hot.ph")
+        con.execute("UPDATE prospects SET pain_score=14 WHERE id=?", (b["id"],)); con.commit()
+        for x in (a, b): popload.apply_action(con, x["id"], "approve")
+        with mock.patch.dict(os.environ, {"PROSPECT_DAILY_CAP": "1"}):
+            n, calls = self.sent(con)
+        self.assertEqual(calls[0][1], f"prospect-{b['id']}-intro")
 
     def test_reply_unsubscribe_and_late_stop_the_sequence(self):
         con = mem(); p = prospect(con); popload.apply_action(con, p["id"], "approve"); self.sent(con)
@@ -183,3 +211,61 @@ class DiscoveryTests(unittest.TestCase):
         from datetime import date
         a, b = popload.discovery_queries(date(2026, 10, 8)), popload.discovery_queries(date(2026, 10, 9))
         self.assertEqual(len(a), 4); self.assertNotEqual(a, b); self.assertTrue(all("{" not in q for q in a))
+
+
+@mock.patch.dict(os.environ, ENV)
+class PainTests(unittest.TestCase):
+    def test_detects_proof_habits_from_site_text(self):
+        t = "<p>Paid by BDO or GCash? Email a photo of your deposit slip within 24 hours with your order number. We ship only after payment is verified.</p>"
+        self.assertEqual(set(popload.detect_pain(t)), {"email", "order_no", "deadline", "before_dispatch"})
+        self.assertIn("messenger", popload.detect_pain("Send your GCash screenshot to our Facebook page Messenger."))
+        self.assertEqual(popload.detect_pain("<p>We sell candles. Contact us anytime.</p><script>email proof</script>"), [])
+
+    def test_score_and_class_follow_the_strategy_weights(self):
+        self.assertEqual(popload.pain_score(["email", "messenger", "order_no", "before_dispatch", "deadline"], "has_shopify", "proof"), 17)
+        self.assertEqual(popload.pain_score([], "has_shopify", "mention"), 5)
+        self.assertEqual([popload.pain_class(x) for x in (12, 8, 5, 4)], ["Hot", "Warm", "Potential", "Low"])
+
+    def test_opening_line_states_only_what_was_seen(self):
+        con = mem(); p = prospect(con)
+        con.execute("UPDATE prospects SET pay_level='mention'"); con.commit(); p = con.execute("SELECT * FROM prospects").fetchone()
+        self.assertIn("match them to orders by hand", popload.observation(p, "Glow"))   # nothing specific: general line
+        con.execute("UPDATE prospects SET pain='email'"); con.commit(); p = con.execute("SELECT * FROM prospects").fetchone()
+        self.assertIn("email their payment proof", popload.build_message(p, "intro", "https://x.app")["text"])
+        con.execute("UPDATE prospects SET pain='messenger'"); con.commit(); p = con.execute("SELECT * FROM prospects").fetchone()
+        m = popload.build_message(p, "intro", "https://x.app")["text"]
+        self.assertIn("through Messenger", m); self.assertIn("not the best place to keep payment receipts", m)
+        self.assertIn("through Messenger", popload.build_message(p, "reminder", "https://x.app")["text"])
+
+    def test_verification_stores_pain_and_score(self):
+        con = mem(); popload.add_rows(con, [{"name": "G", "website": "glowph.com"}])
+        page = "cdn.shopify.com GCash. Email your deposit slip with your order number to hello@glowph.com within 24 hours."
+        popload.verify_all(con, fetch=fetcher({"/": (page, {})}), log=lambda *_: None)
+        r = con.execute("SELECT pain, pain_score, status FROM prospects").fetchone()
+        self.assertIn("email", r["pain"]); self.assertGreaterEqual(r["pain_score"], 12); self.assertEqual(r["status"], "verified")
+
+
+@mock.patch.dict(os.environ, ENV)
+class CrawlTests(unittest.TestCase):
+    def test_follows_the_shops_own_payment_links_only(self):
+        home = ('<a href="/pages/how-we-accept-payment">p</a> <a href="https://www.glowph.com/pages/faq-shipping">f</a>'
+                '<a href="https://evil.example/pages/payment">x</a> <a href="/products/payment-mug">no</a> <a href="/">home</a>')
+        got = popload.linked_pages(home, "https://glowph.com")
+        self.assertEqual(got, ["https://glowph.com/pages/how-we-accept-payment", "https://www.glowph.com/pages/faq-shipping"])
+
+    def test_payment_wording_on_a_linked_page_is_found(self):
+        con = mem(); popload.add_rows(con, [{"name": "G", "website": "glowph.com"}])
+        pages = {"/": ('cdn.shopify.com <a href="/pages/how-we-accept-payment">x</a>', {}),
+                 "/pages/how-we-accept-payment": ("GCash or BDO transfer: email the deposit slip to hello@glowph.com", {})}
+        popload.verify_all(con, fetch=fetcher(pages), log=lambda *_: None)
+        r = con.execute("SELECT status, pay_level, pain, email_source FROM prospects").fetchone()
+        self.assertEqual((r["status"], r["pay_level"]), ("verified", "proof")); self.assertIn("email", r["pain"])
+        self.assertTrue(r["email_source"].endswith("/pages/how-we-accept-payment"))
+
+    def test_a_slow_home_page_gets_one_retry(self):
+        calls = []
+        def fetch(url):
+            calls.append(url)
+            if len(calls) == 1: raise OSError("timeout")
+            return ("cdn.shopify.com GCash hello@glowph.com", {})
+        self.assertEqual(popload.verify_site({"website": "https://glowph.com", "domain": "glowph.com"}, fetch)["platform"], "has_shopify")

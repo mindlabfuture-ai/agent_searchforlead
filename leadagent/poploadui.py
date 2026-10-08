@@ -12,6 +12,13 @@ STYLE = ("<style>body{font-family:system-ui;max-width:900px;margin:1rem auto;pad
          "nav a{margin-right:12px}</style>")
 FILTERS = [("verified", "Ready to approve"), ("needs_email", "Needs an email"), ("approved", "In the sequence"),
            ("rejected", "Rejected"), ("new", "Not checked yet"), ("all", "All")]
+PAIN_NAMES = {"email": "by email", "messenger": "via Messenger/chat", "order_no": "order number needed", "before_dispatch": "checked before dispatch", "deadline": "payment deadline"}
+
+
+def PAIN_LABEL(pain):
+    return ", ".join(PAIN_NAMES.get(k, k) for k in (pain or "").split(",") if k) or "nothing specific seen"
+
+
 STEP_MARK = {"sent": "sent", "pending": "waiting", "skipped": "skipped", "failed": "FAILED"}
 
 
@@ -26,7 +33,7 @@ def render_page(con, tok, message="", show="verified", results=None):
     counts = dict(con.execute("SELECT status, COUNT(*) FROM prospects GROUP BY status").fetchall())
     nav = " ".join(f"<a href='/prospects?show={k}'>{E(label)} ({sum(counts.values()) if k == 'all' else counts.get(k, 0)})</a>" for k, label in FILTERS)
     q = "SELECT * FROM prospects" + ("" if show == "all" else " WHERE status=?") + \
-        " ORDER BY CASE pay_level WHEN 'proof' THEN 0 WHEN 'mention' THEN 1 ELSE 2 END, id LIMIT 200"
+        " ORDER BY pain_score DESC, CASE pay_level WHEN 'proof' THEN 0 WHEN 'mention' THEN 1 ELSE 2 END, id LIMIT 200"
     rows = con.execute(q, (() if show == "all" else (show if show in dict(FILTERS) else "verified",))).fetchall()
     cards = []
     for p in rows:
@@ -37,6 +44,7 @@ def render_page(con, tok, message="", show="verified", results=None):
         why = f"<br><span class=no>{E(p['reject_reason'])}</span>" if p["reject_reason"] else ""
         claim = f"<br><small>Your list says: {E(p['claim'])}</small>" if p["claim"] else ""
         pay = {"proof": "asks buyers for proof of payment", "mention": "mentions manual payments", "none": "no manual payments seen"}.get(p["pay_level"], "")
+        fit = f"<br>Fit: <strong>{popload.pain_class(p['pain_score'] or 0)}</strong> ({p['pain_score'] or 0}) &middot; proof: {E(PAIN_LABEL(p['pain']))}"
         b = ""
         if p["status"] == "verified":
             b = _btn(tok, p["id"], "approve", "Approve sequence") + _btn(tok, p["id"], "reject", "Reject")
@@ -50,7 +58,7 @@ def render_page(con, tok, message="", show="verified", results=None):
             b = _btn(tok, p["id"], "reconsider", "Reconsider")
         cards.append(f"<section><h3>{E(p['name'])} <span class=tag>{E(p['status'])}</span></h3>"
                      f"<a href=\"{E(p['website'])}\" rel=\"noopener noreferrer\" target=_blank>{E(p['domain'])}</a> &middot; {E(p['niche'])}<br>"
-                     f"Shopify: {E(p['platform'])} &middot; {E(pay)} {('(' + E(p['pay_methods']) + ')') if p['pay_methods'] else ''}<br>{email}{alts}{why}{claim}"
+                     f"Shopify: {E(p['platform'])} &middot; {E(pay)} {('(' + E(p['pay_methods']) + ')') if p['pay_methods'] else ''}{fit}<br>{email}{alts}{why}{claim}"
                      f"{('<p><small>' + line + '</small></p>') if line else ''}<p>{b}</p></section>")
     res = ""
     if results is not None:
@@ -63,7 +71,7 @@ def render_page(con, tok, message="", show="verified", results=None):
     return (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>POPLoad prospects</title>{STYLE}"
             f"<nav><a href='/'>Lead queue</a><a href='/previews'>Previews</a><a href='/clients'>Clients</a></nav><h1>POPLoad prospects</h1>"
             f"<p class=b style='background:{'#fde' if sending else '#ffd'}'>{E(banner)}</p>"
-            f"<p>Sent today: {popload.sent_today(con)}/{config.env_int('PROSPECT_DAILY_CAP', 10)}. Each approved prospect gets 3 emails: day 0, day 4 and day 11. "
+            f"<p>Sent today: {popload.sent_today(con)}/{config.env_int('PROSPECT_DAILY_CAP', 10)}. Each approved prospect gets 4 emails: day 0, 3, 7 (the demo video, if POPLOAD_DEMO_URL is set) and 14, highest fit first. "
             f"A reply, unsubscribe or bounce stops the rest; mark replies yourself with <em>They replied</em>.</p>{msg}{res}"
             f"<section><h3>Import a list</h3><form method=post action=/prospects>{tok}<input type=hidden name=mode value=import>"
             f"<p>CSV with a header row (<code>Merchant Brand, Niche / Products, Platform / Domain, Manual Payment Instructions</code>) or four columns: name, niche, website, notes. "

@@ -3,7 +3,7 @@
 A separate track from the store-build leads. Rows are imported from a list, then *verified* from the sites
 themselves: the domain must load, the site must run on Shopify (POPLoad is a Shopify app), and a business email
 must be published on the site's own pages. Nothing is guessed or taken from anywhere else. A person approves each
-prospect before anything is sent; the three-step sequence then runs on its own and stops on a reply, an
+prospect before anything is sent; the four-touch sequence then runs on its own and stops on a reply, an
 unsubscribe, a bounce or a complaint."""
 import csv
 import io
@@ -16,7 +16,8 @@ from urllib.parse import quote, urljoin, urlparse
 from . import config, db, emailing, emailtemplate, search, shopify_check
 
 MAX_ROWS = 300
-PAGES = ["/", "/pages/contact", "/pages/contact-us", "/pages/payment", "/pages/payment-options", "/pages/faq", "/policies/refund-policy"]
+PAGES = ["/", "/pages/contact", "/pages/contact-us", "/pages/payment", "/pages/payment-options", "/pages/payment-methods", "/pages/how-to-order",
+         "/pages/how-to-pay", "/pages/faq", "/policies/refund-policy", "/policies/shipping-policy"]
 TLDS = {"com", "ph", "net", "org", "co", "io", "biz", "shop", "store", "asia", "info", "me", "ph", "online"}
 PLACEHOLDER = ("xxx", "example", "yourdomain", "yourname", "domain", "email", "name@", "user@", "test@", "sample")
 ROLE_LOCALS = ("hello", "hi", "info", "support", "sales", "contact", "shop", "orders", "care", "customer", "help", "admin")
@@ -24,41 +25,52 @@ PROOF_RE = re.compile(r"proof of payment|payment proof|deposit slip|payment (scr
 METHODS = [("GCash", r"\bg-?cash\b"), ("Maya", r"\b(pay)?maya\b"), ("bank transfer", r"\bbank (transfer|deposit)\b|\bbdo\b|\bbpi\b|\bunionbank\b|\bmetrobank\b")]
 
 # step, days after the first email
-STEPS = [("intro", 0), ("how_it_works", 4), ("last_note", 11)]
+STEPS = [("intro", 0), ("reminder", 3), ("demo", 7), ("last_note", 14)]
 MAX_LATE_DAYS = 7
+HOT, WARM, POTENTIAL = 12, 8, 5  # pain-score cut-offs
 MAX_ATTEMPTS = 3
 
 COPY = {
     "greeting": "Hi {name} team,",
     "intro": dict(
-        subject="Fewer payment receipts to chase at {name}",
-        preheader="Customers upload the receipt, you approve it in one click.",
-        intro="I noticed {name} takes {methods}, so you probably get payment receipts by email, Messenger or Viber and match them to orders by hand. I built POPLoad, a Shopify app, to take that off your plate.",
+        subject="Chasing payment screenshots at {name}?",
+        preheader="Customers upload the receipt with the order; you approve it in one click.",
+        intro="{observation} {pain} I built POPLoad, a Shopify app, so customers upload the receipt straight to their order instead.",
         list_title="What POPLoad does",
         items=["Upload: customers pay by bank transfer, GCash or Maya, then upload the receipt right on the order page.",
-               "Approve: you see it in your Shopify admin and approve it with one click. The order is marked as paid.",
+               "Approve: you see it in your Shopify admin, attached to the order, and approve it with one click. The order is marked as paid.",
                "Calm inbox: no more digging through emails and chats for proof of payment."],
-        closing="POPLoad is still in Shopify's app review, so I am offering early access: I install it with you, and the first 10 receipt uploads are free. Want me to send the install link?",
-        cta="Yes, send me the link", cta_subject="POPLoad early access"),
-    "how_it_works": dict(
-        subject="How POPLoad works, in 3 steps",
-        preheader="What your customers and you would see.",
-        intro="A quick follow-up in case my last email got buried. This is what POPLoad looks like for {name}:",
+        closing="POPLoad is still in Shopify's app review, so I am offering early access: I install it with you, and the first 10 receipt uploads are free. Want to see how it works? I can send a 2-minute demo.",
+        cta="Yes, send the demo", cta_subject="POPLoad demo"),
+    "reminder": dict(
+        subject="Quick question about payment proofs",
+        preheader="Would a 2-minute demo be useful?",
+        intro="Just following up. I noticed {name} accepts {methods} and collects payment proof {where}. POPLoad was built to put that receipt directly with the Shopify order.",
         list_title="The flow",
-        items=["Order: the customer picks bank transfer, GCash or Maya at checkout and pays from their own app.",
-               "Receipt: on the thank-you page they upload a screenshot of the receipt.",
-               "Approve: you open POPLoad in your Shopify admin, check it and approve it. The order shows as paid."],
-        closing="If you would like to see it on your own store, reply \"demo\" and I will set it up with a test order.",
-        cta="Reply \"demo\"", cta_subject="POPLoad demo"),
+        items=["The customer pays from their own app and uploads the receipt on the order page.",
+               "You open the order in Shopify and the receipt is already there.",
+               "You approve it, and the order shows as paid."],
+        closing="Would it be useful if I sent you a 2-minute demo?",
+        cta="Yes, send the demo", cta_subject="POPLoad demo"),
+    "demo": dict(
+        subject="A 2-minute POPLoad example",
+        preheader="Customer pays, uploads the receipt, you see it with the order.",
+        intro="I made a 2-minute example of the workflow: the customer pays, uploads the receipt, and you see it with the order in Shopify. Here it is.",
+        list_title="What you will see",
+        items=["Before: a screenshot arrives in Messenger or email and someone has to find the order.",
+               "After: the receipt is already attached to the order.",
+               "Your side: review it and approve, in one place."],
+        closing="If {name} collects payment proof by hand today, this is the step POPLoad takes away. I am happy to install it with you.",
+        cta="Watch the 2-minute demo", cta_subject="POPLoad demo"),
     "last_note": dict(
-        subject="Should I close this out?",
+        subject="Should I close the loop?",
         preheader="My last note about POPLoad.",
-        intro="This is my last note on this. If matching receipts by hand is not a pain for {name}, no problem at all.",
+        intro="I reached out because {name}'s payment-proof process looks like the workflow POPLoad was built to simplify. If it is not a pain right now, no problem at all.",
         list_title="Two options",
-        items=["Yes: reply YES and I will send the early-access install link.",
+        items=["Yes: reply YES and I will send the 2-minute demo.",
                "No: ignore this and I will not email you again."],
         closing="Either way, I wish {name} a great season.",
-        cta="Reply YES", cta_subject="POPLoad early access"),
+        cta="Reply YES", cta_subject="POPLoad demo"),
 }
 
 
@@ -205,25 +217,60 @@ def assess_payments(text):
     return level, seen
 
 
+LINK_RE = re.compile(r"""href=["']([^"'#]+)""", re.I)
+LINK_WORDS = re.compile(r"payment|how-to|order|faq|shipping|delivery|terms|polic|contact|checkout-info|bank|gcash", re.I)
+EXTRA_PAGES = 8
+
+
+def linked_pages(home, base):
+    """Same-site pages the shop itself links to that are likely to explain payment (not guessed paths)."""
+    host, out = urlparse(base).netloc.lower().removeprefix("www."), []
+    for href in LINK_RE.findall(home or ""):
+        u = urljoin(base + "/", href.strip())
+        pu = urlparse(u)
+        path = pu.path.rstrip("/") or "/"
+        if pu.scheme not in ("http", "https") or pu.netloc.lower().removeprefix("www.") != host or path == "/":
+            continue
+        if re.search(r"/(products|collections|cart|account|blogs/[^/]+/.+|cdn)(/|$)|\.(jpg|png|webp|css|js|pdf)$", path, re.I) or not LINK_WORDS.search(path):
+            continue
+        key = pu.scheme + "://" + pu.netloc + path
+        if key not in out:
+            out.append(key)
+    return out[:EXTRA_PAGES]
+
+
 def verify_site(prospect, fetch=shopify_check.fetch):
     """Look at the shop's own pages. Returns a dict of what was found; never raises."""
-    out = {"platform": "unreachable", "pay_level": "", "pay_methods": [], "emails": [], "email_source": ""}
-    pages = {}
-    for path in PAGES:
+    out = {"platform": "unreachable", "pay_level": "", "pay_methods": [], "pain": [], "emails": [], "email_source": ""}
+    base, pages = prospect["website"], {}
+    for attempt in range(2):  # one retry: a shop that is merely slow should not be rejected as missing
         try:
-            pages[path] = fetch(urljoin(prospect["website"] + "/", path.lstrip("/")))
+            pages["/"] = fetch(base + "/")
+            break
         except (urllib.error.URLError, OSError, ValueError):
-            if path == "/":
+            if attempt:
                 return out
+    for path in PAGES[1:]:
+        try:
+            pages[path] = fetch(urljoin(base + "/", path.lstrip("/")))
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+    for url in linked_pages(pages["/"][0], base):
+        if url not in pages:
+            try:
+                pages[url] = fetch(url)
+            except (urllib.error.URLError, OSError, ValueError):
+                pass
     home, headers = pages["/"]
     out["platform"] = shopify_check.classify_html(home, headers)
     blob = " ".join(h for h, _ in pages.values())
     out["pay_level"], out["pay_methods"] = assess_payments(blob)
+    out["pain"] = detect_pain(blob)
     found = pick_emails(emailing.extract_emails(blob), prospect["domain"])
     out["emails"] = found[:4]
     for path, (h, _) in pages.items():
         if found and found[0] in h.lower():
-            out["email_source"] = prospect["website"] + path
+            out["email_source"] = path if path.startswith("http") else base + path
             break
     return out
 
@@ -245,11 +292,43 @@ def apply_verification(con, pid, res):
         status, why = "rejected", "that address opted out or bounced"
     if p["status"] in ("approved", "replied", "won", "lost", "done"):
         return  # never change a prospect that is already in the sequence
-    con.execute("UPDATE prospects SET platform=?, pay_level=?, pay_methods=?, email=COALESCE(?,email), email_source=COALESCE(?,email_source), "
+    con.execute("UPDATE prospects SET platform=?, pay_level=?, pay_methods=?, pain=?, pain_score=?, email=COALESCE(?,email), email_source=COALESCE(?,email_source), "
                 "email_alts=?, status=?, reject_reason=?, verified_at=?, updated_at=? WHERE id=?",
-                (res["platform"], res["pay_level"], ", ".join(res["pay_methods"]), email, res["email_source"] or None,
+                (res["platform"], res["pay_level"], ", ".join(res["pay_methods"]), ",".join(res["pain"]),
+                 pain_score(res["pain"], res["platform"], res["pay_level"]), email, res["email_source"] or None,
                  ", ".join(res["emails"][1:]), status, why, db.now(), db.now(), pid))
     con.commit()
+
+
+# What the shop's own pages say about how proof of payment reaches them. Only wording found on the site counts.
+_PROOF = r"(proof|receipt|screenshot|deposit slip|payment slip|transaction)"
+_EMAIL = r"(e-?mail|@[\w-]+)"
+_CHAT = r"(messenger|facebook|fb page|viber|instagram|\bdm\b|direct message|whatsapp)"
+PAIN_RULES = {
+    "email": (rf"{_EMAIL}.{{0,120}}{_PROOF}|{_PROOF}.{{0,120}}{_EMAIL}", 3),
+    "messenger": (rf"{_CHAT}.{{0,120}}{_PROOF}|{_PROOF}.{{0,120}}{_CHAT}", 3),
+    "order_no": (rf"order (number|no\b|#|id)[^.]{{0,100}}{_PROOF}|{_PROOF}[^.]{{0,100}}order (number|no\b|#|id)", 2),
+    "before_dispatch": (rf"{_PROOF}[^.]{{0,100}}(before|prior to|until)[^.]{{0,40}}(ship|dispatch|process|pack|deliver)|(before|prior to)[^.]{{0,40}}(ship|dispatch|process|pack)[^.]{{0,80}}{_PROOF}|(ship|dispatch|process|pack)[^.]{{0,40}}(after|once|when)[^.]{{0,40}}(payment|{_PROOF})[^.]{{0,30}}(verif|confirm|cleared)", 2),
+    "deadline": (rf"(within|in) (\d+|one|two|a) ?(hours?|hrs?|days?)[^.]{{0,100}}{_PROOF}|{_PROOF}[^.]{{0,100}}(within|in) (\d+|one|two|a) ?(hours?|hrs?|days?)|(auto-?cancel|will be cancel)", 2),
+}
+
+
+def detect_pain(text):
+    """The proof-of-payment habits visible in the shop's own text, as a list of keys from PAIN_RULES."""
+    plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", re.sub(r"(?is)<(script|style).*?</\1>", " ", text)))
+    plain = re.sub(r"(?<=\w)\.(?=\w)", "_", __import__("html").unescape(plain))  # dots inside addresses are not sentence ends
+    return [k for k, (rx, _) in PAIN_RULES.items() if re.search(rx, plain, re.I)]
+
+
+def pain_score(pain, platform, pay_level):
+    """Fit score: +3 proof by email, +3 by Messenger/chat, +3 manual payments taken, +2 each for order number,
+    verification before dispatch and a deadline, +2 Shopify confirmed."""
+    return (sum(PAIN_RULES[k][1] for k in pain if k in PAIN_RULES) + (3 if pay_level in ("proof", "mention") else 0)
+            + (2 if platform == "has_shopify" else 0))
+
+
+def pain_class(score):
+    return "Hot" if score >= HOT else "Warm" if score >= WARM else "Potential" if score >= POTENTIAL else "Low"
 
 
 def verify_all(con, fetch=shopify_check.fetch, limit=60, workers=8, log=print):
@@ -293,7 +372,7 @@ def apply_action(con, pid, action, value=""):
         for step, _ in STEPS:
             con.execute("INSERT OR IGNORE INTO prospect_steps (prospect_id,step) VALUES (?,?)", (pid, step))
         con.execute("UPDATE prospects SET status='approved', approved_at=?, updated_at=? WHERE id=?", (db.now(), db.now(), pid))
-        msg = "Approved. The three-step sequence starts at the next send window."
+        msg = "Approved. The four-email sequence (days 0, 3, 7 and 14) starts at the next send window."
     elif action == "reject":
         con.execute("UPDATE prospects SET status='rejected', reject_reason='rejected by you', updated_at=? WHERE id=?", (db.now(), pid))
         msg = "Rejected."
@@ -320,10 +399,43 @@ def human_methods(p):
     return " and ".join([", ".join(m[:-1]), m[-1]] if len(m) > 2 else m) if m else "manual payments like GCash or bank transfer"
 
 
+def _pain(p):
+    return [k for k in ((p["pain"] if "pain" in p.keys() else "") or "").split(",") if k]
+
+
+def where_proof(p):
+    pain = _pain(p)
+    if "email" in pain and "messenger" in pain:
+        return "by email or Messenger"
+    return "by email" if "email" in pain else "through Messenger" if "messenger" in pain else "by hand"
+
+
+def observation(p, name):
+    """The opening line. It states only what the shop's own pages showed; with nothing specific it stays general."""
+    pain, methods = _pain(p), human_methods(p)
+    if "email" in pain and "messenger" in pain:
+        return f"I noticed {name} asks customers to send their payment proof by email or Messenger after they order."
+    if "email" in pain:
+        return f"I noticed {name} asks customers to email their payment proof after they place an order."
+    if "messenger" in pain:
+        return f"I noticed {name} takes {methods} and customers send their payment proof through Messenger."
+    if (p["pay_level"] if "pay_level" in p.keys() else "") == "proof":
+        return f"I noticed {name} takes {methods} and asks customers for proof of payment."
+    return f"I noticed {name} takes {methods}, so you probably get payment receipts by email, Messenger or Viber and match them to orders by hand."
+
+
+def pain_sentence(p):
+    base = "The catch is that the receipt arrives separately from the Shopify order, so someone has to work out which order it belongs to."
+    if "messenger" in _pain(p):
+        base += " Messenger is great for talking to customers, but it is not the best place to keep payment receipts."
+    return base
+
+
 def build_message(prospect, step, base_url):
     c = COPY[step]
     name = " ".join(prospect["name"].split())[:60]
-    fmt = dict(name=name, methods=human_methods(prospect))
+    fmt = dict(name=name, methods=human_methods(prospect), where=where_proof(prospect),
+               observation=observation(prospect, name), pain=pain_sentence(prospect))
     company = config.env("SENDER_COMPANY", "MindLab Future AI")
     sender = config.env("SENDER_NAME", "Mark")
     address = config.env("SENDER_ADDRESS", "Corporate Tower 2, BGC, Taguig City, Philippines")
@@ -335,10 +447,14 @@ def build_message(prospect, step, base_url):
     numbered = "\n".join(f"{n}. {i}" for n, i in enumerate(c["items"], 1))
     text = (f"{greeting}\n\n{intro}\n\n{c['list_title']}:\n{numbered}\n\n{closing}\n\n{sender}\n{company}"
             f"\n\n--\n{why}\n{company}, {address}\nNot interested? Unsubscribe: {unsub} (or just reply STOP).")
+    demo = config.env("POPLOAD_DEMO_URL")
+    button = demo if step == "demo" and demo else f"mailto:{reply}?subject={quote(c['cta_subject'])}"
+    if step == "demo" and demo:
+        text = text.replace(f"{closing}\n\n", f"{closing}\n\nWatch it here: {demo}\n\n", 1)
     html = emailtemplate.render_followup(
         subject=subject, preheader=c["preheader"], greeting=greeting, intro=intro, list_title=c["list_title"],
         items=c["items"], closing=closing, cta_label=c["cta"],
-        cta_mailto=f"mailto:{reply}?subject={quote(c['cta_subject'])}", signature=[sender, company],
+        cta_mailto=button, signature=[sender, company],
         unsub_url=unsub, why=why, company=company, address=address, logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL))
     return {"subject": subject, "text": text, "html": html,
             "headers": {"List-Unsubscribe": f"<{unsub}>, <mailto:{reply}?subject=unsubscribe>",
@@ -387,9 +503,12 @@ def run(con, post=None, now=None, force=False, enabled=None, base_url=None, log=
         return 0
     room = config.env_int("PROSPECT_DAILY_CAP", 10) - sent_today(con, now)
     sent = 0
-    for p in con.execute("SELECT * FROM prospects WHERE status='approved' ORDER BY id").fetchall():
+    for p in con.execute("SELECT * FROM prospects WHERE status='approved' ORDER BY pain_score DESC, id").fetchall():
         if room <= 0:
             break
+        for step, _ in STEPS:  # prospects approved before a step existed still get it
+            con.execute("INSERT OR IGNORE INTO prospect_steps (prospect_id,step) VALUES (?,?)", (p["id"], step))
+        con.commit()
         if emailing.is_suppressed(con, p["email"]):
             con.execute("UPDATE prospects SET status='done', updated_at=? WHERE id=?", (db.now(), p["id"]))
             con.execute("UPDATE prospect_steps SET status='skipped', note='address opted out' WHERE prospect_id=? AND status='pending'", (p["id"],))
@@ -400,6 +519,10 @@ def run(con, post=None, now=None, force=False, enabled=None, base_url=None, log=
             continue
         if late > MAX_LATE_DAYS:
             con.execute("UPDATE prospect_steps SET status='skipped', note='too late to send' WHERE id=?", (row["id"],))
+            con.commit()
+            continue
+        if row["step"] == "demo" and not config.env("POPLOAD_DEMO_URL"):
+            con.execute("UPDATE prospect_steps SET status='skipped', note='no POPLOAD_DEMO_URL set' WHERE id=?", (row["id"],))
             con.commit()
             continue
         msg = build_message(p, row["step"], base_url)
