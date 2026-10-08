@@ -17,13 +17,14 @@ def score_lead(lead):
     if sell:
         score += min(30, 8 * sell); notes.append(f"selling signals x{sell}")
 
+    plat = lead["platform"] if "platform" in lead.keys() else "facebook"
     status = lead["shopify_status"]
     if status == "has_shopify":
         return 0, "already on Shopify - skip"
     if status == "no_store":
         score += 25; notes.append("no store found")
     elif status == "marketplace_only":
-        score += 20; notes.append("Shopee/Lazada only")
+        score += 20; notes.append(f"{plat} only - pays marketplace fees, owns no store")
     elif status == "unknown":
         score += 5; notes.append("site unreachable - verify")
     return min(score, 100), "; ".join(notes)
