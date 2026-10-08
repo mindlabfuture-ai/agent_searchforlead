@@ -10,8 +10,10 @@ CREATE TABLE IF NOT EXISTS leads (
   name TEXT, snippet TEXT, website TEXT,
   shopify_status TEXT DEFAULT 'unchecked',  -- unchecked | has_shopify | no_store | marketplace_only | unknown
   score INTEGER DEFAULT 0, score_notes TEXT,
-  status TEXT DEFAULT 'new',  -- new | qualified | drafted | contacted | replied | won | lost | do_not_contact
+  status TEXT DEFAULT 'new',  -- new | qualified | drafted | contacted | replied | won | lost | do_not_contact | merged
   draft TEXT, source TEXT, notes TEXT,
+  also_on TEXT DEFAULT '',  -- other profiles of the same business: "platform:url; platform:url"
+  merged_into INTEGER,       -- set on duplicate rows (status='merged') pointing at the kept lead
   created_at TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS do_not_contact (url TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
@@ -83,6 +85,11 @@ def connect(path):
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    have = {r[1] for r in con.execute("PRAGMA table_info(leads)")}
+    for col, ddl in (("also_on", "TEXT DEFAULT ''"), ("merged_into", "INTEGER")):  # upgrade older DBs
+        if col not in have:
+            con.execute(f"ALTER TABLE leads ADD COLUMN {col} {ddl}")
+    con.commit()
     return con
 
 

@@ -49,6 +49,10 @@ NON_STORE_HOSTS = ["facebook.com", "fb.com", "fb.me", "instagram.com", "tiktok.c
                    "linktr.ee", "lnk.bio", "beacons.ai", "shopee.", "lazada.", "carousell.", "wa.me",
                    "m.me", "messenger.com", "youtube.com", "youtu.be", "twitter.com", "x.com"]
 
+# Shared hosts: the same host does NOT mean the same business, so never match on these.
+GENERIC_HOSTS = ["bit.ly", "tinyurl.com", "goo.gl", "forms.gle", "docs.google.com", "sites.google.com",
+                 "drive.google.com", "canva.site", "wa.me"]
+
 DB_PATH = os.environ.get("LEADS_DB", "data/leads.db")
 
 
