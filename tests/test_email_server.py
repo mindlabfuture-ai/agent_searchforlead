@@ -83,6 +83,19 @@ class EmailTests(unittest.TestCase):
             self.assertIn(needle, tl["text"]); self.assertIn(needle, plain(tl["html"]))
         self.assertIn("Libreng store design", tl["html"])                   # preheader follows the language
 
+    def test_domain_note_is_shown_in_both_parts_and_languages(self):
+        con = mem(); l = lead(con, "glowph"); en = emailing.build_email(l, config.base_url())
+        for needle in ("your own domain name (like yourshop.com) isn't included", "subdomain such as yourshop.mindlabfuture-ai.com",
+                       "switch to your own domain anytime"):
+            self.assertIn(needle, en["text"]); self.assertIn(needle, plain(en["html"]))
+        self.assertEqual(en["html"].count("&#10003;"), 3)                  # the note is not a fourth checked perk
+        self.assertLess(en["text"].index("Money-back guarantee"), en["text"].index("Note: your own domain"))
+        self.assertLess(en["text"].index("Note: your own domain"), en["text"].index("Would you like"))
+        con2 = mem(); lead(con2, "kapeng", name="Kapeng"); con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
+        tl = emailing.build_email(con2.execute("SELECT * FROM leads").fetchone(), config.base_url())
+        for needle in ("hindi po kasama ang sariling domain name", "subdomain tulad ng yourshop.mindlabfuture-ai.com"):
+            self.assertIn(needle, tl["text"]); self.assertIn(needle, plain(tl["html"]))
+
     def test_offer_survives_marketplace_variant(self):
         con = mem(); l = lead(con, "k"); con.execute("UPDATE leads SET platform='shopee', url='https://shopee.ph/k'")
         m = emailing.build_email(con.execute("SELECT * FROM leads").fetchone(), config.base_url())
