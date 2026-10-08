@@ -315,3 +315,64 @@ class BackgroundThreadTests(unittest.TestCase):
                 stop.set()
             self.assertEqual(errors, [])
             self.assertTrue(ok and off and n and nurture.called)
+
+
+@mock.patch.dict(os.environ, {**CLEAN, **ENV})
+class AIServiceDownTests(unittest.TestCase):
+    def down(self, status=400, text="This organization has been disabled organization_on_hold"):
+        import anthropic, httpx2
+        req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        cls = {400: anthropic.BadRequestError, 429: anthropic.RateLimitError, 401: anthropic.AuthenticationError}.get(status, anthropic.APIStatusError)
+        return cls(text, response=httpx2.Response(status, request=req), body={})
+
+    def test_classification(self):
+        import anthropic, httpx2
+        self.assertTrue(inbox.is_service_error(self.down(400)))
+        self.assertTrue(inbox.is_service_error(self.down(429, "slow down")))
+        self.assertTrue(inbox.is_service_error(self.down(401, "bad key")))
+        self.assertTrue(inbox.is_service_error(anthropic.APIConnectionError(request=httpx2.Request("POST", "https://x"))))
+        self.assertFalse(inbox.is_service_error(self.down(400, "messages: text content blocks must be non-empty")))
+        self.assertFalse(inbox.is_service_error(ValueError("bad json")))
+
+    def test_mail_is_kept_not_given_up_on(self):
+        con = mem(); mail, tg = FakeMail(), FakeTG()
+        with mock.patch.object(inbox, "triage", side_effect=self.down()):
+            for _ in range(6):                                                             # far more than MAX_ATTEMPTS
+                self.assertEqual(inbox.process(con, msg(), object(), mail, tg), "error")
+        row = con.execute("SELECT * FROM inbox_messages").fetchone()
+        self.assertEqual(row["attempts"], 0); self.assertEqual(mail.seen, [])              # still unread, still retryable
+        self.assertEqual(len(tg.out), 1); self.assertIn("cannot reach Claude", tg.out[0][0])   # one alert, not six
+        with mock.patch.object(inbox, "triage", return_value=T()):                          # the account is fixed
+            self.assertEqual(inbox.process(con, msg(), object(), mail, tg), "draft_waiting")
+        self.assertIsNone(con.execute("SELECT 1 FROM meta WHERE key='inbox_llm_error'").fetchone())
+
+    def test_website_enquiry_is_passed_on_when_the_ai_is_down(self):
+        con = mem(); tg = FakeTG()
+        with mock.patch.object(inbox, "triage", side_effect=self.down()):
+            inbox.form_enquiry(con, {"data": {"email": "lee@biz.ph", "first_name": "Lee", "message": "Please call me about a store"}}, object(), FakeMail(), tg)
+        self.assertTrue(any("Please call me about a store" in t for t, _ in tg.out) and any("lee@biz.ph" in t for t, _ in tg.out))
+
+    def test_polling_pauses_while_down_and_assistant_warns(self):
+        con = mem(); mail = FakeMail([msg(1)])
+        with mock.patch.object(inbox, "triage", side_effect=self.down()):
+            inbox.poll_once(con, object(), mail, FakeTG(), lambda *_: None)
+        self.assertTrue(inbox.llm_down(con))
+        with mock.patch.object(inbox, "process") as proc:
+            inbox.poll_once(con, object(), mail, FakeTG(), lambda *_: None); proc.assert_not_called()
+        now = datetime.now(timezone.utc)
+        with mock.patch.dict(os.environ, {"INBOX_ENABLED": "true", "MAIL_PASSWORD": "x", "ANTHROPIC_API_KEY": "k"}):
+            k = {f["key"]: f for f in assistant.health(con, now)}
+        self.assertEqual(k["inbox_llm"]["severity"], "critical"); self.assertIn("organization", k["inbox_llm"]["detail"])
+
+
+@mock.patch.dict(os.environ, {**CLEAN, **ENV})
+class ResetTests(unittest.TestCase):
+    def test_service_errors_get_their_tries_back_but_real_errors_do_not(self):
+        con = mem()
+        for i, note in enumerate(("BadRequestError: ... 'error_code': 'organization_on_hold' ...", "This organization has been disabled", "ValueError: bad json")):
+            con.execute("INSERT INTO inbox_messages (msg_id, ts, addr, status, attempts, note) VALUES (?,?,?,'error',3,?)", (f"<{i}>", db.now(), "a@x.ph", note))
+        con.commit()
+        self.assertEqual(inbox.reset_service_errors(con), 2)
+        self.assertEqual([r[0] for r in con.execute("SELECT attempts FROM inbox_messages ORDER BY id")], [0, 0, 3])
+        with mock.patch.object(inbox, "triage", return_value=T()):                          # the stuck message is processed again
+            self.assertEqual(inbox.process(con, msg(i=1, body="hi", addr="a@x.ph") | {"msg_id": "<0>"}, object(), FakeMail(), FakeTG()), "draft_waiting")
