@@ -276,3 +276,46 @@ class CrawlTests(unittest.TestCase):
             if len(calls) == 1: raise OSError("timeout")
             return ("cdn.shopify.com GCash hello@glowph.com", {})
         self.assertEqual(popload.verify_site({"website": "https://glowph.com", "domain": "glowph.com"}, fetch)["platform"], "has_shopify")
+
+
+@mock.patch.dict(os.environ, ENV)
+class LinkListTests(unittest.TestCase):
+    def test_plain_list_of_links_one_per_line(self):
+        con = mem()
+        text = "https://www.pink-manila.ph/products/x?utm=1\nglowph.com\n\nhttps://instagram.com/somestore\nhttps://l.facebook.com/x\n"
+        results, _ = popload.add_rows(con, popload.parse_csv(text))
+        self.assertEqual([(s) for _, s, _ in results], ["added", "added", "skipped", "skipped"])
+        self.assertEqual([r["name"] for r in con.execute("SELECT name FROM prospects ORDER BY id")], ["Pink Manila", "Glowph"])
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM prospects WHERE name_auto=1").fetchone()[0], 2)
+        self.assertIn("own website", results[2][2])
+
+    def test_several_links_on_one_line_and_mixed_separators(self):
+        for text in ("a.ph b.ph c.ph", "a.ph, b.ph, c.ph", "a.ph\tb.ph\tc.ph", "a.ph;b.ph;c.ph"):
+            rows = popload.parse_csv(text)
+            self.assertEqual(sorted(r["website"] for r in rows), ["a.ph", "b.ph", "c.ph"], repr(text))
+
+    def test_headerless_rows_keep_name_niche_and_notes_wherever_the_link_is(self):
+        self.assertEqual(popload.parse_csv("Glow PH,skin,glowph.com,takes GCash")[0],
+                         {"name": "Glow PH", "niche": "skin", "claim": "takes GCash", "website": "glowph.com"})
+        self.assertEqual(popload.parse_csv("Glow PH,glowph.com")[0], {"name": "Glow PH", "website": "glowph.com"})
+
+    def test_verification_replaces_a_placeholder_name_with_the_shops_own(self):
+        con = mem(); popload.add_rows(con, popload.parse_csv("glowph.com"))
+        page = '<title>Glow PH – Skincare | Home</title><meta property="og:site_name" content="Glow Skin PH"> cdn.shopify.com GCash hello@glowph.com'
+        popload.verify_all(con, fetch=fetcher({"/": (page, {})}), log=lambda *_: None)
+        r = con.execute("SELECT name, name_auto FROM prospects").fetchone()
+        self.assertEqual((r["name"], r["name_auto"]), ("Glow Skin PH", 0))
+
+    def test_a_name_you_typed_is_never_replaced(self):
+        con = mem(); popload.add_rows(con, [{"name": "My Pick", "website": "glowph.com"}])
+        popload.verify_all(con, fetch=fetcher({"/": ("<title>Other Name</title> cdn.shopify.com GCash hello@glowph.com", {})}), log=lambda *_: None)
+        self.assertEqual(con.execute("SELECT name FROM prospects").fetchone()[0], "My Pick")
+
+    def test_site_name_cleanup(self):
+        self.assertEqual(popload.site_name("<title>Pink Manila &amp; Co - Welcome</title>"), "Pink Manila & Co")
+        self.assertEqual(popload.site_name("<title>Home</title>"), "")
+        self.assertEqual(popload.site_name("<title>x</title>"), "")
+        self.assertEqual(popload.site_name("no title here"), "")
+
+    def test_placeholder_name_uses_the_brand_label_not_a_subdomain(self):
+        self.assertEqual([popload.name_from_domain(d) for d in ("shop.brand-name.com.ph", "pinkmanila.ph", "a-b_c.com")], ["Brand Name", "Pinkmanila", "A B C"])

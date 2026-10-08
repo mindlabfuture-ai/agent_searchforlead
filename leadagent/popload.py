@@ -6,6 +6,7 @@ must be published on the site's own pages. Nothing is guessed or taken from anyw
 prospect before anything is sent; the four-touch sequence then runs on its own and stops on a reply, an
 unsubscribe, a bounce or a complaint."""
 import csv
+import html as htmllib
 import io
 import re
 import urllib.error
@@ -106,7 +107,36 @@ def parse_csv(text):
     head = [HEADER_MAP.get(h.strip().lower()) for h in rows[0]]
     if "website" in head:
         return [{k: v for k, v in zip(head, r) if k} for r in rows[1:]]
-    return [dict(zip(["name", "niche", "website", "claim"], r)) for r in rows]
+    return [row for r in rows for row in _headerless(r)]
+
+
+def _is_link(cell):
+    cell = cell.strip()
+    return bool(cell) and not re.search(r"\s", cell) and bool(domain_of(cell)) and "." in cell
+
+
+def _headerless(cells):
+    """A row without a header: find the cell that is a web address; the others are name, niche and notes in that order.
+    Several addresses on one row (a pasted list) become one row each, so a plain list of store links works."""
+    cells = [c.strip() for c in cells]
+    if len(cells) == 1 and len(cells[0].split()) > 1 and all(_is_link(t) for t in cells[0].split()):
+        cells = cells[0].split()  # space-separated addresses
+    links = [c for c in cells if _is_link(c)]
+    if not links:
+        return [dict(zip(["name", "niche", "website", "claim"], cells))]
+    if len(links) > 1:
+        return [{"website": l} for l in links]
+    others = [c for c in cells if c and c != links[0]]
+    return [dict(zip(["name", "niche", "claim"], others), website=links[0])]
+
+
+def name_from_domain(dom):
+    """A readable placeholder; verification replaces it with the name the shop uses on its own site."""
+    parts = dom.split(".")
+    while len(parts) > 1 and parts[-1] in ("com", "net", "org", "co", "ph", "asia", "shop", "store", "online", "io"):
+        parts.pop()
+    label = parts[-1]  # shop.brand.com.ph -> brand
+    return " ".join(w.capitalize() for w in re.split(r"[-_]+", label) if w) or dom
 
 
 def add_rows(con, rows):
@@ -115,9 +145,14 @@ def add_rows(con, rows):
     for r in rows[:MAX_ROWS]:
         name = " ".join(str(r.get("name") or "").split())[:80]
         dom = domain_of(r.get("website"))
-        if not dom or not name:
-            results.append((name or r.get("website", ""), "skipped", "needs a business name and a website"))
+        if not dom:
+            results.append((name or str(r.get("website", ""))[:80], "skipped", "needs a website"))
             continue
+        if any(h.strip(".") in dom for h in config.NON_STORE_HOSTS):
+            results.append((name or dom, "skipped", "a social, marketplace or link-in-bio page; paste the store's own website instead"))
+            continue
+        auto = 0 if name else 1
+        name = name or name_from_domain(dom)
         if con.execute("SELECT 1 FROM prospects WHERE domain=?", (dom,)).fetchone():
             results.append((name, "skipped", "already in the list"))
             continue
@@ -125,9 +160,9 @@ def add_rows(con, rows):
             results.append((name, "skipped", "already a store-build lead"))
             continue
         now = db.now()
-        con.execute("INSERT INTO prospects (name,website,domain,niche,claim,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
-                    (name, "https://" + dom, dom, str(r.get("niche") or "")[:120], str(r.get("claim") or "")[:300], now, now))
-        results.append((name, "added", ""))
+        con.execute("INSERT INTO prospects (name,website,domain,niche,claim,name_auto,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (name, "https://" + dom, dom, str(r.get("niche") or "")[:120], str(r.get("claim") or "")[:300], auto, now, now))
+        results.append((name, "added", "name taken from the site when it is checked" if auto else ""))
     con.commit()
     return results, len(rows) > MAX_ROWS
 
@@ -248,9 +283,19 @@ def linked_pages(home, base):
     return out[:EXTRA_PAGES]
 
 
+def site_name(home):
+    """The shop's own name: og:site_name, else the front of the page title (before ' - ', ' | ' or an en dash)."""
+    m = (re.search(r"""<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)""", home or "", re.I)
+         or re.search(r"""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:site_name["']""", home or "", re.I)
+         or re.search(r"<title[^>]*>(.*?)</title>", home or "", re.I | re.S))
+    name = " ".join(htmllib.unescape(re.sub(r"<[^>]+>", " ", m.group(1))).split()) if m else ""
+    name = re.split(r"\s+[-|\u2013\u2014:]\s+", name)[0].strip(" -|")
+    return name if 2 <= len(name) <= 60 and not re.search(r"https?://|^home$|^welcome", name, re.I) else ""
+
+
 def verify_site(prospect, fetch=shopify_check.fetch):
     """Look at the shop's own pages. Returns a dict of what was found; never raises."""
-    out = {"platform": "unreachable", "pay_level": "", "pay_methods": [], "pain": [], "emails": [], "email_source": ""}
+    out = {"platform": "unreachable", "pay_level": "", "pay_methods": [], "pain": [], "emails": [], "email_source": "", "site_name": ""}
     base, pages = prospect["website"], {}
     for attempt in range(2):  # one retry: a shop that is merely slow should not be rejected as missing
         try:
@@ -272,6 +317,7 @@ def verify_site(prospect, fetch=shopify_check.fetch):
                 pass
     home, headers = pages["/"]
     out["platform"] = shopify_check.classify_html(home, headers)
+    out["site_name"] = site_name(home)
     blob = " ".join(h for h, _ in pages.values())
     out["pay_level"], out["pay_methods"] = assess_payments(blob)
     out["pain"] = detect_pain(blob)
@@ -301,6 +347,8 @@ def apply_verification(con, pid, res):
         status, why = "rejected", "that address opted out or bounced"
     if p["status"] in ("approved", "replied", "won", "lost", "done"):
         return  # never change a prospect that is already in the sequence
+    if res.get("site_name") and p["name_auto"]:
+        con.execute("UPDATE prospects SET name=?, name_auto=0 WHERE id=?", (res["site_name"], pid))
     con.execute("UPDATE prospects SET platform=?, pay_level=?, pay_methods=?, pain=?, pain_score=?, email=COALESCE(?,email), email_source=COALESCE(?,email_source), "
                 "email_alts=?, status=?, reject_reason=?, verified_at=?, updated_at=? WHERE id=?",
                 (res["platform"], res["pay_level"], ", ".join(res["pay_methods"]), ",".join(res["pain"]),

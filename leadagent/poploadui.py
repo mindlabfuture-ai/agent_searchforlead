@@ -74,7 +74,7 @@ def render_page(con, tok, message="", show="verified", results=None):
             f"<p>Sent today: {popload.sent_today(con)}/{config.env_int('PROSPECT_DAILY_CAP', 10)}. Each approved prospect gets 4 emails: day 0, 3, 7 (the demo video, if POPLOAD_DEMO_URL is set) and 14, highest fit first. "
             f"A reply, unsubscribe or bounce stops the rest; mark replies yourself with <em>They replied</em>.</p>{msg}{res}"
             f"<section><h3>Import a list</h3><form method=post action=/prospects>{tok}<input type=hidden name=mode value=import>"
-            f"<p>CSV with a header row (<code>Merchant Brand, Niche / Products, Platform / Domain, Manual Payment Instructions</code>) or four columns: name, niche, website, notes. "
+            f"<p>Paste a CSV with a header row (<code>Merchant Brand, Niche / Products, Platform / Domain, Manual Payment Instructions</code>), rows of name, niche, website, notes, or just a list of store links, one per line (for example from the Meta Ad Library; the name is read from the store's own site). Social, marketplace and link-in-bio pages are skipped: paste the store's own website. "
             f"Each site is checked: it must load, run on Shopify, show manual-payment signs and publish a business email.</p>"
             f"<textarea name=csv rows=6></textarea><p><button>Import and verify</button></p></form></section>"
             f"<p>{nav}</p>{''.join(cards) or '<p>Nothing here.</p>'}")

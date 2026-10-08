@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS prospects (  -- existing Shopify stores to offer POPL
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, website TEXT NOT NULL, domain TEXT UNIQUE NOT NULL, niche TEXT, claim TEXT,
   platform TEXT DEFAULT 'unchecked',    -- unchecked | has_shopify | no_store | unreachable
   pay_level TEXT DEFAULT '', pay_methods TEXT DEFAULT '',  -- proof | mention | none, and the methods seen on the site
+  name_auto INTEGER DEFAULT 0,                             -- 1 while the name is only a placeholder made from the domain
   pain TEXT DEFAULT '', pain_score INTEGER DEFAULT 0,      -- proof-of-payment habits seen on the site, and the fit score
   email TEXT, email_source TEXT, email_alts TEXT DEFAULT '',
   status TEXT DEFAULT 'new',  -- new | verified | needs_email | rejected | approved | replied | won | lost | done
@@ -167,7 +168,7 @@ def connect(path):
         if col not in have:
             con.execute(f"ALTER TABLE leads ADD COLUMN {col} {ddl}")
     pcols = {r[1] for r in con.execute("PRAGMA table_info(prospects)")}
-    for col, ddl in (("pain", "TEXT DEFAULT ''"), ("pain_score", "INTEGER DEFAULT 0")):
+    for col, ddl in (("pain", "TEXT DEFAULT ''"), ("pain_score", "INTEGER DEFAULT 0"), ("name_auto", "INTEGER DEFAULT 0")):
         if col not in pcols:
             con.execute(f"ALTER TABLE prospects ADD COLUMN {col} {ddl}")
     if "kind" not in {r[1] for r in con.execute("PRAGMA table_info(emails)")}:
