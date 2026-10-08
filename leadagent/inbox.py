@@ -276,6 +276,56 @@ def _notify(tg, source, sender, subject, t, status, pending_id=None, extra=""):
         log.warning("telegram failed: %r", ex)
 
 
+def is_service_error(ex):
+    """True when the failure is about the AI service itself (account on hold, bad key, no credit, rate limit, outage, network),
+    not about this message. Those are retried later and never use up a message's tries."""
+    try:
+        import anthropic
+    except ImportError:
+        return False
+    if isinstance(ex, anthropic.APIConnectionError):
+        return True
+    if isinstance(ex, anthropic.APIStatusError):
+        text = str(ex).lower()
+        return ex.status_code in (401, 402, 403, 429) or ex.status_code >= 500 or "organization_on_hold" in text or "has been disabled" in text or "credit" in text
+    return False
+
+
+def reset_service_errors(con):
+    """Messages that failed only because the AI service refused (account on hold, etc.) used up their tries under the old
+    logic. Give them their tries back so the mail still sitting unread in the mailbox is picked up again."""
+    n = con.execute("UPDATE inbox_messages SET attempts=0, note='AI service unavailable; will retry' WHERE status='error' AND "
+                    "(note LIKE '%organization_on_hold%' OR note LIKE '%has been disabled%')").rowcount
+    con.commit()
+    return n
+
+
+def llm_down(con, now=None):
+    r = con.execute("SELECT value FROM meta WHERE key='inbox_llm_down_until'").fetchone()
+    return bool(r) and _utc(r[0]) > (now or _now())
+
+
+def _mark_llm(con, ex=None, tg=None, now=None):
+    """Remember that the AI service is failing (or has recovered), pause for 5 minutes, and tell the owner at most every 6 hours."""
+    now = now or _now()
+    if ex is None:
+        con.execute("DELETE FROM meta WHERE key IN ('inbox_llm_error','inbox_llm_down_until')")
+        con.commit()
+        return
+    why = f"{type(ex).__name__}: {ex}"[:300]
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_llm_error', ?)", (f"{now.isoformat(timespec='seconds')} {why}",))
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_llm_down_until', ?)", ((now + timedelta(minutes=5)).isoformat(timespec="seconds"),))
+    last = con.execute("SELECT value FROM meta WHERE key='inbox_llm_alerted'").fetchone()
+    if tg is not None and (not last or _utc(last[0]) < now - timedelta(hours=6)):
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_llm_alerted', ?)", (now.isoformat(timespec="seconds"),))
+        try:
+            tg.send("The inbox agent cannot reach Claude, so new mail is waiting unread and website enquiries come through unsorted. "
+                    f"Reason: {html.escape(why[:200])}")
+        except Exception as tex:
+            log.warning("telegram failed: %r", tex)
+    con.commit()
+
+
 def _record(con, **v):
     cols = ", ".join(v)
     cur = con.execute(f"INSERT INTO inbox_messages ({cols}) VALUES ({','.join('?' * len(v))})", tuple(v.values()))
@@ -318,6 +368,8 @@ def process(con, msg, ai, mail, tg, source="email", now=None):
             return "opted_out"
         context = ("this sender is someone we cold-emailed (" + ", ".join(f"{m['kind']} #{m['id']} {m['name']}" for m in matches) + "); their message is a reply to our outreach")
         t = triage(ai, f"{name} <{addr}>", subject, body, source, context if matches else "")
+        if con.execute("SELECT 1 FROM meta WHERE key='inbox_llm_error'").fetchone():
+            _mark_llm(con)  # the AI service is back
         if t["is_spam"] or t["category"] == "spam":
             if msg.get("num") is not None:
                 mail.move_to_spam(msg["num"])
@@ -349,6 +401,18 @@ def process(con, msg, ai, mail, tg, source="email", now=None):
         _notify(tg, source, addr, subject, t, "awaiting your approval", pid, extra=stop_note)
         return "draft_waiting"
     except Exception as ex:
+        if is_service_error(ex):  # the AI service is the problem, not this message: keep the message for later
+            log.warning("AI service unavailable: %r", ex)
+            con.execute("UPDATE inbox_messages SET status='error', attempts=attempts-1, note=? WHERE id=?", ("AI service unavailable; will retry" if msg.get("num") is not None
+                        else "AI service unavailable; read it in Netlify Forms", mid))
+            con.commit()
+            _mark_llm(con, ex, tg)
+            if msg.get("num") is None:  # a website enquiry cannot be re-read later, so pass the essentials on now
+                try:
+                    tg.send(f"<b>Website form</b> from {html.escape(name)} &lt;{html.escape(addr)}&gt; (not sorted: the AI service is down)\n\n{html.escape(body[:600])}")
+                except Exception as tex:
+                    log.warning("telegram failed: %r", tex)
+            return "error"
         log.exception("failed processing %s", msg["msg_id"])
         con.execute("UPDATE inbox_messages SET status='error', note=? WHERE id=?", (f"{type(ex).__name__}: {ex}"[:300], mid))
         con.commit()
@@ -376,6 +440,8 @@ def poll_once(con, ai, mail, tg, log_=log.info):
         return 0
     con.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_last_ok', ?)", (db.now(),))
     con.commit()
+    if llm_down(con):
+        return 0  # the mailbox is fine; the mail stays unread until the AI service answers again
     n = 0
     for m in msgs:
         n += process(con, m, ai, mail, tg) not in ("error",)
@@ -483,6 +549,9 @@ def start(stop, say=print):
         return []
     import anthropic
     ai, mail, tg = anthropic.Anthropic(), Mailbox(), Telegram()
+    boot = db.connect(config.DB_PATH)
+    reset_service_errors(boot)
+    boot.close()
     every = max(15, config.env_int("POLL_SECONDS", 60))
     loops = [(lambda con: poll_once(con, ai, mail, tg, say), every, "mail poll"),
              (lambda con: nurture_once(con, ai, mail, tg), 3600, "nurture")]

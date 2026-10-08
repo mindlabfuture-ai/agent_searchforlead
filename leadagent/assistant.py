@@ -105,6 +105,11 @@ def inbox_health(con, now):
         if not ok or _utc(ok[0]) < now - timedelta(minutes=15):
             out.append(finding(CRITICAL, "inbox_stalled", "The support@ mailbox has not been read for 15 minutes" if ok else "The support@ mailbox has not been read yet",
                                (err[0] if err else "No error recorded."), "Check MAIL_USER, MAIL_PASSWORD (an app password) and IMAP_HOST, then the Railway logs."))
+        llm_err = con.execute("SELECT value FROM meta WHERE key='inbox_llm_error'").fetchone()
+        if llm_err and _utc(llm_err[0].split(" ", 1)[0]) > now - timedelta(minutes=30):
+            out.append(finding(CRITICAL, "inbox_llm", "The inbox agent cannot reach Claude: new mail is waiting unread",
+                               llm_err[0].split(" ", 1)[1][:250] if " " in llm_err[0] else llm_err[0],
+                               "Check the Anthropic account behind ANTHROPIC_API_KEY (console.anthropic.com: billing, limits, or an organization on hold, which has an appeal link)."))
         if not (config.env("TELEGRAM_BOT_TOKEN") and config.env("TELEGRAM_CHAT_ID")):
             out.append(finding(INFO, "inbox_no_telegram", "Telegram is not set up for the inbox", "Alerts and Send buttons only appear in the dashboard.", ""))
     elif config.env("MAIL_PASSWORD"):
