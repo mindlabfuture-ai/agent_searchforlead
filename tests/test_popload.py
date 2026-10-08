@@ -346,3 +346,20 @@ class ProofWordingTests(unittest.TestCase):
         for t in ("Please email a screenshot of the transaction to a@x.ph.", "Send your deposit slip to a@x.ph",
                   "kindly email proof of payment to a@x.ph", "Include a GCash screenshot when you email us at a@x.ph"):
             self.assertIn("email", popload.detect_pain(t), t)
+
+
+@mock.patch.dict(os.environ, ENV)
+class RecheckTests(unittest.TestCase):
+    def test_old_results_are_rechecked_once_and_your_decisions_stay(self):
+        con = mem()
+        for i, (st, why, src) in enumerate([("verified", None, "https://a.ph/p"), ("rejected", "no sign of GCash", None), ("rejected", "rejected by you", None),
+                                            ("needs_email", None, None), ("verified", None, "added manually"), ("approved", None, "https://f.ph/p")]):
+            con.execute("INSERT INTO prospects (name,website,domain,status,reject_reason,email_source) VALUES (?,?,?,?,?,?)",
+                        (f"P{i}", f"https://p{i}.ph", f"p{i}.ph", st, why, src))
+        con.commit()
+        self.assertEqual(popload.recheck_if_stale(con), 3)
+        got = {r["name"]: r["status"] for r in con.execute("SELECT name,status FROM prospects")}
+        self.assertEqual(got, {"P0": "new", "P1": "new", "P2": "rejected", "P3": "new", "P4": "verified", "P5": "approved"})
+        self.assertEqual(popload.recheck_if_stale(con), 0)                      # only once per detector version
+        con.execute("UPDATE prospects SET status='verified' WHERE name='P0'"); con.commit()
+        self.assertEqual(popload.recheck_if_stale(con), 0); self.assertEqual(con.execute("SELECT status FROM prospects WHERE name='P0'").fetchone()[0], "verified")

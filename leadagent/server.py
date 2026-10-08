@@ -429,6 +429,7 @@ def tick(log=print, stop=None):
             con.execute("INSERT OR REPLACE INTO meta VALUES ('last_discovery', ?)", (today,))
             con.commit()
             popload.discover(con, search.provider(), popload.discovery_queries(pht.date(), config.env_int("PROSPECT_SEARCH_QUERIES", 4)), log=log)
+    popload.recheck_if_stale(con)
     popload.verify_all(con, log=lambda *_: None)  # checks any newly imported prospects (at most 60 per pass)
     if config.env("NETLIFY_AUTH_TOKEN") and con.execute("SELECT 1 FROM demo_sites WHERE status='live' LIMIT 1").fetchone():
         demosite.cleanup(con, log=log)  # expired demos, and demos of leads who opted out, come down
