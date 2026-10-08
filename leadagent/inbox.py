@@ -465,10 +465,12 @@ def telegram_poll_once(con, tg, mail):
 
 
 # ---------------- running it ----------------
-def _loop(fn, every, stop, name):
+def _worker(fn, every, stop, name):
+    """One background loop. It opens its own database connection: SQLite connections cannot be shared between threads."""
+    con = db.connect(config.DB_PATH)
     while not stop.is_set():
         try:
-            fn()
+            fn(con)
         except Exception:
             log.exception("%s failed", name)
         stop.wait(every)
@@ -481,12 +483,12 @@ def start(stop, say=print):
         return []
     import anthropic
     ai, mail, tg = anthropic.Anthropic(), Mailbox(), Telegram()
-    path = config.DB_PATH
-    c1, c2, c3 = db.connect(path), db.connect(path), db.connect(path)
-    threads = [threading.Thread(target=_loop, args=(lambda: poll_once(c1, ai, mail, tg, say), max(15, config.env_int("POLL_SECONDS", 60)), stop, "mail poll"), daemon=True),
-               threading.Thread(target=_loop, args=(lambda: nurture_once(c2, ai, mail, tg), 3600, stop, "nurture"), daemon=True)]
+    every = max(15, config.env_int("POLL_SECONDS", 60))
+    loops = [(lambda con: poll_once(con, ai, mail, tg, say), every, "mail poll"),
+             (lambda con: nurture_once(con, ai, mail, tg), 3600, "nurture")]
     if tg.on:
-        threads.append(threading.Thread(target=_loop, args=(lambda: telegram_poll_once(c3, tg, mail), 1, stop, "telegram"), daemon=True))
+        loops.append((lambda con: telegram_poll_once(con, tg, mail), 1, "telegram"))
+    threads = [threading.Thread(target=_worker, args=(fn, secs, stop, name), daemon=True) for fn, secs, name in loops]
     for t in threads:
         t.start()
     say(f"inbox agent: reading {mail_user()} every {config.env_int('POLL_SECONDS', 60)}s, reply mode {reply_mode()}, telegram {'on' if tg.on else 'off'}")

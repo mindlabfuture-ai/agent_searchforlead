@@ -286,3 +286,32 @@ class AssistantIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch.dict(os.environ, {**CLEAN, **ENV, "INBOX_ENABLED": "true", "MAIL_PASSWORD": "x", "POLL_SECONDS": "15"})
+class BackgroundThreadTests(unittest.TestCase):
+    def test_every_loop_runs_in_its_own_thread_with_its_own_connection(self):
+        """Regression: connections made in the main thread cannot be used in the loop threads (it crashed in production)."""
+        import tempfile, threading
+        from leadagent import config
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(config, "DB_PATH", os.path.join(d, "t.db")), \
+                mock.patch("anthropic.Anthropic", return_value=object()), mock.patch.object(inbox, "Mailbox", return_value=FakeMail([msg(1)])), \
+                mock.patch.object(inbox, "Telegram", return_value=FakeTG()), mock.patch.object(inbox, "triage", return_value=T()), \
+                mock.patch.object(inbox, "nurture_once", return_value=0) as nurture:
+            db.connect(config.DB_PATH).close()
+            stop = threading.Event(); errors = []
+            with mock.patch.object(inbox.log, "exception", side_effect=lambda *a, **k: errors.append(a)):
+                threads = inbox.start(stop, lambda *_: None)
+                self.assertEqual(len(threads), 3)
+                for _ in range(100):
+                    con = db.connect(config.DB_PATH)
+                    ok = con.execute("SELECT 1 FROM meta WHERE key='inbox_last_ok'").fetchone()
+                    off = con.execute("SELECT 1 FROM meta WHERE key='tg_offset'").fetchone()
+                    n = con.execute("SELECT COUNT(*) FROM inbox_messages").fetchone()[0]
+                    con.close()
+                    if ok and off and n and nurture.called:
+                        break
+                    stop.wait(0.1)
+                stop.set()
+            self.assertEqual(errors, [])
+            self.assertTrue(ok and off and n and nurture.called)
