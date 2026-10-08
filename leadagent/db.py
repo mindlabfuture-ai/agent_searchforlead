@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS emails (
 );
 CREATE TABLE IF NOT EXISTS clients (  -- merchants whose store we built and handed over
   id INTEGER PRIMARY KEY, lead_id INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, store_url TEXT,
-  lang TEXT DEFAULT 'en',                      -- en | tl
   handed_over_at TEXT,                         -- YYYY-MM-DD (Philippine date)
   popload_status TEXT DEFAULT 'not_installed', -- not_installed | installed | active
   status TEXT DEFAULT 'active',                -- active | paused | done

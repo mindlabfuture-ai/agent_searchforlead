@@ -61,7 +61,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("name", ok(name="")[1]); self.assertIn("email", ok(email="nope")[1])
         self.assertIn("email", ok(email="noreply@brand.com")[1])
         self.assertIn("https://", ok(store="http://shop.ph")[1]); self.assertIn("https://", ok(store="javascript:alert(1)")[1])
-        self.assertIn("language", ok(rest={"lang": "fr"})[1]); self.assertIn("POPLoad", ok(rest={"popload_status": "x"})[1])
+        self.assertIn("POPLoad", ok(rest={"popload_status": "x"})[1])
         self.assertIn("date", ok(rest={"handed_over": "yesterday"})[1])
         self.assertIsNone(ok()[1]); self.assertIn("already", ok()[1])
         emailing.suppress(con, "gone@b.ph", "unsubscribed"); self.assertIn("opted out", ok(email="gone@b.ph")[1])
@@ -69,32 +69,33 @@ class ScheduleTests(unittest.TestCase):
 
 @mock.patch.dict(os.environ, ENV)
 class MessageTests(unittest.TestCase):
-    def test_every_step_and_language_is_branded_compliant_and_clean(self):
+    def test_every_step_is_branded_taglish_compliant_and_clean(self):
         con = mem()
-        for lang, name in (("en", "Glow PH"), ("tl", "Kapeng Bukid")):
-            cid = client(con, name=name, email=f"{lang}@shop.ph", lang=lang, popload_status="installed")
-            c = con.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone()
-            for step, _ in followups.STEPS:
-                m = followups.build_followup(c, step, config.base_url()); h = m["html"]
-                for brand in ("#060A12", "#E3B965", "Space Grotesk", "mindlabfuture-ai.com/img/logo-ml.png"):
-                    self.assertIn(brand, h)
-                self.assertIn("/unsubscribe?t=", h); self.assertIn("/unsubscribe?t=", m["text"])
-                self.assertEqual(m["headers"]["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
-                self.assertEqual(h.count("<img"), 1); self.assertNotIn("<script", h)
-                self.assertIn("built your Shopify store", m["text"]); self.assertNotIn("publicly listed", m["text"])
-                self.assertIn("1. ", m["text"]); self.assertIn("Taguig", m["text"])
-                self.assertTrue(m["subject"] in plain(h) and m["subject"])
-                for part in (m["text"], plain(h)):
-                    for banned in ("$1/", "guarantee", "refund", "free trial", "₱1,000"):
-                        self.assertNotIn(banned, part.lower())
+        cid = client(con, name="Kapeng Bukid", email="kapeng@shop.ph", popload_status="installed")
+        c = con.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone()
+        for step, _ in followups.STEPS:
+            m = followups.build_followup(c, step, config.base_url()); h = m["html"]
+            for brand in ("#060A12", "#E3B965", "Space Grotesk", "mindlabfuture-ai.com/img/logo-ml.png", '<html lang="tl">'):
+                self.assertIn(brand, h)
+            self.assertIn("/unsubscribe?t=", h); self.assertIn("/unsubscribe?t=", m["text"])
+            self.assertEqual(m["headers"]["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
+            self.assertEqual(h.count("<img"), 1); self.assertNotIn("<script", h)
+            self.assertIn("ang MindLab Future AI ang gumawa ng Shopify store ninyo", m["text"])
+            self.assertNotIn("publicly listed", m["text"]); self.assertNotIn("naka-list sa publiko", m["text"])
+            self.assertIn("Hi po Kapeng Bukid team,", m["text"]); self.assertIn("1. ", m["text"]); self.assertIn("Taguig", m["text"])
+            self.assertIn("(o mag-reply lang ng STOP)", m["text"]); self.assertIn("o mag-reply lang ng STOP", h)
+            self.assertTrue(m["subject"] in plain(h) and m["subject"])
+            for part in (m["text"], plain(h)):
+                for banned in ("$1/", "guarantee", "refund", "free trial", "₱1,000", "You're getting", "Not interested", "Just reply to this email"):
+                    self.assertNotIn(banned, part)
 
     def test_welcome_depends_on_popload_status(self):
         con = mem()
         a = con.execute("SELECT * FROM clients WHERE id=?", (client(con, email="a@shop.ph", popload_status="not_installed"),)).fetchone()
         b = con.execute("SELECT * FROM clients WHERE id=?", (client(con, email="b@shop.ph", popload_status="installed"),)).fetchone()
-        self.assertIn("Reply POPLOAD", followups.build_followup(a, "welcome", config.base_url())["text"])
+        self.assertIn("Mag-reply lang ng POPLOAD", followups.build_followup(a, "welcome", config.base_url())["text"])
         t = followups.build_followup(b, "welcome", config.base_url())["text"]
-        self.assertIn("Add your payment details", t); self.assertNotIn("Reply POPLOAD", t)
+        self.assertIn("Ilagay ang payment details", t); self.assertNotIn("Mag-reply lang ng POPLOAD", t)
 
     def test_hostile_name_and_store_are_escaped_or_flattened(self):
         con = mem(); cid = client(con, name='Glow <img src=x onerror=alert(1)>\n\nPH', store_url="https://a.ph/?x=<b>")
@@ -105,7 +106,7 @@ class MessageTests(unittest.TestCase):
     def test_no_store_link_reads_cleanly(self):
         con = mem(); cid = client(con, store_url="")
         t = followups.build_followup(con.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone(), "welcome", config.base_url())["text"]
-        self.assertIn("is now yours. Here is how", t)
+        self.assertIn("Sa inyo na ang Shopify store ninyo. Ito po", t)
 
 
 @mock.patch.dict(os.environ, ENV)

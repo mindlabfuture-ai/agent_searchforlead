@@ -16,7 +16,7 @@ SITE_URL = "https://mindlabfuture-ai.com"
 
 E = lambda v: H.escape(str(v), quote=True)
 
-CHIPS = ("Product pages", "GCash, Maya &amp; bank checkout", "Shipping set up")
+CHIPS = ("Product pages", "GCash, Maya at bank checkout", "Shipping set up")
 
 
 def _p(text, color=TEXT, size=16, extra=""):
@@ -44,7 +44,7 @@ def _offer_card(title, items, notes=(), numbered=False):
 
 
 def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signature, cta_label, cta_mailto,
-                unsub_url, source, company, address, callout="", offer_title="", offer_items=(), offer_notes=(),
+                unsub_url, why, company, address, callout="", offer_title="", offer_items=(), offer_notes=(),
                 logo_url=LOGO_URL, site_url=SITE_URL):
     chips = "".join(
         f"<td class=\"stack\" width=\"33%\" valign=\"top\" style=\"padding:0 4px 8px\">"
@@ -62,8 +62,7 @@ def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signa
 {_offer_card(offer_title, offer_items, offer_notes)}{_p(ask)}
 {_button(cta_label, cta_mailto)}
 {_p(reply, MUTED, 14)}"""
-    why = f"You're getting this one-time message because this business address is publicly listed at {E(source)}."
-    return _page(subject, preheader, main, signature, why, company, address, unsub_url, logo_url, site_url)
+    return _page(subject, preheader, main, signature, E(why), company, address, unsub_url, logo_url, site_url)
 
 
 def _button(label, href):
@@ -76,7 +75,7 @@ def _page(subject, preheader, main, signature, why, company, address, unsub_url,
     """The shared frame: header with logo, brass bar, card, signature, footer with unsubscribe."""
     sign = "<br>".join(E(line) for line in signature)
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="tl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark light"><meta name="supported-color-schemes" content="dark light">
 <title>{E(subject)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -109,7 +108,7 @@ def _page(subject, preheader, main, signature, why, company, address, unsub_url,
 {why}<br>
 {E(company)} &middot; {E(address)}<br>
 <a href="{E(site_url)}" style="color:{BRASS_HI};text-decoration:underline">mindlabfuture-ai.com</a> &nbsp;&middot;&nbsp;
-<a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> or just reply STOP.
+<a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> o mag-reply lang ng STOP.
 </td></tr>
 
 </table></td></tr></table></body></html>"""
@@ -124,6 +123,6 @@ def render_followup(*, subject, preheader, greeting, intro, list_title, items, c
     return _page(subject, preheader, main, signature, E(why), company, address, unsub_url, logo_url, site_url)
 
 
-def cta_mailto(reply_to, name, taglish=False):
-    subject = ("Libreng store preview para sa " if taglish else "Free store preview for ") + name
+def cta_mailto(reply_to, name):
+    subject = "Libreng store preview para sa " + name
     return f"mailto:{reply_to}?subject={quote(subject)}"

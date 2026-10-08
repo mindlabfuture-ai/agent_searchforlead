@@ -86,7 +86,7 @@ def cmd_send(a, con):
 
 
 def cmd_client_add(a, con):
-    cid, err = followups.add_client(con, a.name, a.email, a.store_url, a.lang, a.handed_over, a.lead_id, a.popload)
+    cid, err = followups.add_client(con, a.name, a.email, a.store_url, a.handed_over, a.lead_id, a.popload)
     if err:
         raise SystemExit(f"could not add: {err}")
     print(f"client #{cid} added; follow-ups scheduled")
@@ -154,7 +154,7 @@ def main(argv=None):
     s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_send)
     s = sub.add_parser("client", help="clients whose store you handed over"); cs = s.add_subparsers(dest="sub", required=True)
     s = cs.add_parser("add"); s.add_argument("name"); s.add_argument("email"); s.add_argument("--store-url", default="")
-    s.add_argument("--lang", default="en", choices=["en", "tl"]); s.add_argument("--handed-over", help="YYYY-MM-DD, default today")
+    s.add_argument("--handed-over", help="YYYY-MM-DD, default today")
     s.add_argument("--lead-id", type=int); s.add_argument("--popload", default="not_installed", choices=list(followups.POPLOAD_STATUSES))
     s.set_defaults(f=cmd_client_add)
     cs.add_parser("list").set_defaults(f=cmd_client_list)

@@ -111,7 +111,7 @@ def render_clients_page(con, message=""):
         buttons = (btn("pause", "Pause") if c["status"] == "active" else btn("resume", "Resume") if c["status"] == "paused" else "")
         buttons += btn("skip_next", "Skip next") + btn("popload_installed", "POPLoad installed") + btn("popload_active", "POPLoad in use") \
             + (btn("done", "Mark done") if c["status"] != "done" else "")
-        cards.append(f"<section><h3>{E(c['name'])} <small>#{c['id']} &middot; {E(c['status'])} &middot; {E(c['lang'])} &middot; "
+        cards.append(f"<section><h3>{E(c['name'])} <small>#{c['id']} &middot; {E(c['status'])} &middot; "
                      f"POPLoad {E(c['popload_status'])}</small></h3><p>{link}<br>{E(c['email'])} &middot; handed over {E(c['handed_over_at'])}</p>"
                      f"<p><small>{line}</small></p>{buttons}</section>")
     stats = f"Follow-ups sent today: {followups.sent_today(con)}/{config.env_int('FOLLOWUP_DAILY_CAP', 20)}"
@@ -123,7 +123,6 @@ def render_clients_page(con, message=""):
             f"<label>Their business email (the one they asked you to use)</label><input type=text name=email required>"
             f"<label>Store link (https://...)</label><input type=text name=store_url>"
             f"<label>Handed over on (YYYY-MM-DD, blank = today)</label><input type=text name=handed_over value='{today}'>"
-            f"<label>Language</label><select name=lang><option value=en>English</option><option value=tl>Taglish</option></select>"
             f"<label>POPLoad</label><select name=popload_status><option value=not_installed>Not installed yet</option>"
             f"<option value=installed>Installed</option><option value=active>In use</option></select>"
             f"<label>Lead # (optional, from the queue; marks that lead as won)</label><input type=text name=lead_id>"
@@ -255,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
             if f.get("mode") == "add":
                 lead = f.get("lead_id", "").strip()
                 cid, err = followups.add_client(
-                    con, f.get("name"), f.get("email"), f.get("store_url"), f.get("lang", "en"),
+                    con, f.get("name"), f.get("email"), f.get("store_url"),
                     f.get("handed_over", "").strip() or None, int(lead) if lead.isdigit() else None,
                     f.get("popload_status", "not_installed"))
                 message = f"Could not add: {err}" if err else "Client added. Follow-ups are scheduled."
