@@ -30,7 +30,20 @@ from pathlib import Path
 from . import config, db, demosite, emailing, followups, llm, popload, previewui
 
 log = logging.getLogger("inbox")
-KNOWLEDGE = (Path(__file__).parent / "inbox_knowledge.md").read_text(encoding="utf-8")
+def load_knowledge(env=None):
+    """The knowledge file, with the demo-store section filled from DEMO_STORE_URL / DEMO_STORE_PASSWORD, or left out when either is unset.
+    The password lives in the environment, not in the repository."""
+    text = (Path(__file__).parent / "inbox_knowledge.md").read_text(encoding="utf-8")
+    get = env.get if env is not None else config.env
+    host = re.sub(r"^https?://|/.*$", "", (get("DEMO_STORE_URL") or "").strip().lower())
+    password = (get("DEMO_STORE_PASSWORD") or "").strip()
+    block = re.compile(r"<!--demo-->(.*?)<!--/demo-->\n?", re.S)
+    if host and password and re.fullmatch(r"[a-z0-9.-]+", host) and "\n" not in password:
+        return block.sub(lambda m: m.group(1).replace("{{DEMO_HOST}}", host).replace("{{DEMO_PASSWORD}}", password), text)
+    return block.sub("", text)
+
+
+KNOWLEDGE = load_knowledge()
 FREEMAIL = {"gmail.com", "yahoo.com", "yahoo.com.ph", "outlook.com", "hotmail.com", "icloud.com", "proton.me", "protonmail.com", "live.com", "aol.com", "gmx.com"}
 OPTOUT_RE = re.compile(r"^\W*(stop|unsubscribe|remove me|opt[ -]?out|do not (contact|email)|don'?t (contact|email))\b", re.I)
 MAX_ATTEMPTS = 3

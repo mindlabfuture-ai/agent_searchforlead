@@ -376,3 +376,22 @@ class ResetTests(unittest.TestCase):
         self.assertEqual([r[0] for r in con.execute("SELECT attempts FROM inbox_messages ORDER BY id")], [0, 0, 3])
         with mock.patch.object(inbox, "triage", return_value=T()):                          # the stuck message is processed again
             self.assertEqual(inbox.process(con, msg(i=1, body="hi", addr="a@x.ph") | {"msg_id": "<0>"}, object(), FakeMail(), FakeTG()), "draft_waiting")
+
+
+class DemoStoreKnowledgeTests(unittest.TestCase):
+    def test_section_is_filled_from_the_environment(self):
+        k = inbox.load_knowledge({"DEMO_STORE_URL": "https://Shop-One.myshopify.com/", "DEMO_STORE_PASSWORD": "pw-123"})
+        self.assertIn("https://shop-one.myshopify.com", k); self.assertIn("pw-123", k)
+        self.assertNotIn("<!--", k); self.assertNotIn("{{", k)
+        self.assertIn("Never send or promise a login", k)
+
+    def test_section_is_left_out_unless_both_values_are_set_and_sane(self):
+        for env in ({}, {"DEMO_STORE_URL": "shop.myshopify.com"}, {"DEMO_STORE_PASSWORD": "x"},
+                    {"DEMO_STORE_URL": "bad host!", "DEMO_STORE_PASSWORD": "x"}, {"DEMO_STORE_URL": "a.myshopify.com", "DEMO_STORE_PASSWORD": "x\ny"}):
+            k = inbox.load_knowledge(env)
+            self.assertNotIn("demo store", k.lower(), env); self.assertNotIn("{{", k); self.assertNotIn("<!--", k)
+            self.assertIn("## Pricing you MAY quote", k)
+
+    def test_no_password_is_committed_in_the_knowledge_file(self):
+        raw = (inbox.Path(inbox.__file__).parent / "inbox_knowledge.md").read_text(encoding="utf-8")
+        self.assertIn("{{DEMO_PASSWORD}}", raw); self.assertNotIn("POPLoad-demo", raw); self.assertNotIn("myshopify.com/", raw.split("<!--demo-->")[1])
