@@ -11,13 +11,48 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, emailing, pipeline
+from . import config, db, dedupe, emailing, importer, pipeline
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
+
+PAGE_STYLE = ("<style>body{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}"
+              "section{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}pre{white-space:pre-wrap}"
+              "label{display:block;margin:8px 0 2px}input[type=text],textarea{width:100%;box-sizing:border-box;padding:6px}"
+              ".b{padding:8px;border-radius:6px}button{margin:2px;padding:6px 12px}.ok{color:#060}.no{color:#a00}</style>")
 
 
 def csrf_token():
     return hmac.new(config.env("ADMIN_PASSWORD").encode(), b"csrf", hashlib.sha256).hexdigest()
+
+
+def render_import_page(results=None, truncated=False):
+    """Form to add leads by hand. `results` is importer.add_rows output, shown after a submit."""
+    tok = f"<input type=hidden name=csrf value={csrf_token()}>"
+    out = ""
+    if results is not None:
+        added = sum(1 for _, st, _ in results if st == "added")
+        lines = "".join(f"<li class={'ok' if st == 'added' else 'no'}>{E(label or '(no name)')}: {E(st)}"
+                        f"{' - ' + E(note) if note else ''}</li>" for label, st, note in results)
+        more = f"<p class=no>Only the first {importer.MAX_ROWS} rows were read.</p>" if truncated else ""
+        out = (f"<section><h3>{added} added, {len(results) - added} skipped</h3>{more}<ul>{lines}</ul>"
+               f"<p>New leads are being checked and scored now. Give it a minute, then "
+               f"<a href='/'>open the queue</a>.</p></section>")
+    return (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>Import leads</title>{PAGE_STYLE}<p><a href='/'>&larr; Lead queue</a></p><h1>Import leads</h1>{out}"
+            f"<section><h3>Add one lead</h3><form method=post action=/import>{tok}<input type=hidden name=mode value=single>"
+            f"<label>Profile URL (Facebook page, Instagram, TikTok, Shopee, Lazada or Carousell)</label><input type=text name=url required>"
+            f"<label>Business name</label><input type=text name=name>"
+            f"<label>Notes (what they sell, where, anything useful)</label><input type=text name=snippet>"
+            f"<label>Their website (if any)</label><input type=text name=website>"
+            f"<label>Business email, only if they list it publicly</label><input type=text name=email>"
+            f"<p><button>Add lead</button></p></form></section>"
+            f"<section><h3>Paste a list (CSV)</h3><form method=post action=/import>{tok}<input type=hidden name=mode value=csv>"
+            f"<p>One lead per line: <code>url,name,notes,website,email</code>. A header row is optional, "
+            f"and only the URL is required. Up to {importer.MAX_ROWS} lines.</p>"
+            f"<textarea name=csv rows=8 placeholder='https://facebook.com/glowph,Glow PH,skincare Manila,,'></textarea>"
+            f"<p><button>Import list</button></p></form></section>"
+            f"<p><small>Duplicates, opted-out businesses and addresses that bounced are skipped automatically. "
+            f"Hand-added leads stay in the queue unless the business is already on Shopify.</small></p>")
 
 
 def render_dashboard(con):
@@ -51,7 +86,7 @@ def render_dashboard(con):
             f"<title>Lead queue</title><style>body{{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}}"
             f"section{{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}}pre{{white-space:pre-wrap}}"
             f".b{{background:{'#fde' if sending else '#ffd'};padding:8px;border-radius:6px}}button{{margin:2px}}</style>"
-            f"<h1>Lead queue</h1><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
 
 
 def apply_action(con, lead_id, action, email=""):
@@ -127,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/" and self._authed():
             con = db.connect(config.DB_PATH)
             return self._send(200, render_dashboard(con))
+        if u.path == "/import" and self._authed():
+            return self._send(200, render_import_page())
         if u.path != "/":
             self._send(404, "Not found", "text/plain")
 
@@ -150,7 +187,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, "bad csrf token", "text/plain")
             apply_action(db.connect(config.DB_PATH), int(f.get("id", 0) or 0), f.get("action", ""), f.get("email", ""))
             return self._send(303, "", headers=[("Location", "/")])
-        if u.path not in ("/action",):
+        if u.path == "/import" and self._authed():
+            f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+            if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
+                return self._send(403, "bad csrf token", "text/plain")
+            con = db.connect(config.DB_PATH)
+            rows = importer.parse_csv(f.get("csv", "")) if f.get("mode") == "csv" else [f]
+            results, truncated = importer.add_rows(con, rows)
+            if any(st == "added" for _, st, _ in results):
+                dedupe.run(con, log=lambda *_: None)
+                # check/score/draft hit the network, so run them off the request thread
+                threading.Thread(target=lambda: pipeline.process_new(db.connect(config.DB_PATH), log=print),
+                                 daemon=True).start()
+            return self._send(200, render_import_page(results, truncated))
+        if u.path not in ("/action", "/import"):
             self._send(404, "Not found", "text/plain")
 
 

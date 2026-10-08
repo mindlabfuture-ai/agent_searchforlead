@@ -1,7 +1,11 @@
 """The lead pipeline as plain functions, shared by the CLI and the Railway scheduler."""
+import threading
 from datetime import date
 
 from . import config, db, dedupe, emailing, outreach, scoring, search, shopify_check
+
+
+WORK_LOCK = threading.Lock()  # the scheduler and dashboard imports must not run the pipeline at once
 
 
 def check_all(con, log=print):
@@ -21,7 +25,8 @@ def check_all(con, log=print):
 def score_all(con):
     for r in con.execute("SELECT * FROM leads WHERE status IN ('new','qualified')").fetchall():
         sc, notes = scoring.score_lead(r)
-        st = "qualified" if sc >= scoring.QUALIFY_AT else "new"
+        keep = sc > 0 and r["source"] in scoring.MANUAL_SOURCES
+        st = "qualified" if sc >= scoring.QUALIFY_AT or keep else "new"
         con.execute("UPDATE leads SET score=?, score_notes=?, status=?, updated_at=? WHERE id=?",
                     (sc, notes, st, db.now(), r["id"]))
     con.commit()
@@ -43,7 +48,20 @@ def todays_focus(today=None):
     return niche, loc
 
 
+def process_new(con, log=print):
+    """Check, score and draft whatever was just added (used after a dashboard or CLI import)."""
+    with WORK_LOCK:
+        check_all(con, log)
+        score_all(con)
+        draft_n(con)
+
+
 def run_daily(con, log=print, today=None):
+    with WORK_LOCK:
+        _run_daily(con, log, today)
+
+
+def _run_daily(con, log, today):
     if config.env("SERPER_API_KEY") or config.env("BRAVE_API_KEY"):
         niche, loc = todays_focus(today)
         log(f"daily search: {niche} / {loc}")
