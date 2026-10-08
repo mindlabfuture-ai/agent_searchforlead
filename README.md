@@ -49,15 +49,53 @@ python -m leadagent draft --limit 25
 python -m leadagent export
 python -m leadagent mark https://facebook.com/somepage contacted
 python -m leadagent mark https://facebook.com/somepage do_not_contact --reason "asked to stop"
+python -m leadagent set-email 12 hello@theirshop.ph   # add a publicly listed email by hand
+python -m leadagent send          # approved emails; dry run unless EMAIL_SENDING_ENABLED=true
+python -m leadagent serve         # dashboard + scheduler (what Railway runs)
 python -m unittest discover -s tests
 ```
 
-Stdlib only, Python 3.10+. Data lives in `data/leads.db` (SQLite, git-ignored).
+Stdlib only, Python 3.10+ (the Docker image uses 3.12). Data lives in `data/leads.db` (SQLite, git-ignored).
+
+## Email outreach with Resend
+
+Qualified leads that have a **publicly listed business email** can get one personalized email. The agent finds addresses on the seller's own website or search snippet (never a personal profile), or you add one with `set-email ID address`.
+
+```
+daily job -> drafts -> you click "Approve email" in the dashboard -> sender emails it (Mon-Fri 9-17 PHT, capped)
+```
+
+Guardrails, all enforced in code:
+- **Human approval per lead.** Nothing sends unless you approved that lead.
+- **Dry run by default.** Set `EMAIL_SENDING_ENABLED=true` only after domain setup. `python -m leadagent send` previews until then.
+- **One email per business, ever.** No automatic follow-ups. A repeat to the same lead or address is blocked, and Resend idempotency keys stop double-sends on retries.
+- **One-click unsubscribe** (`List-Unsubscribe` + `List-Unsubscribe-Post`, RFC 8058) and a visible link. The page needs a button press, so mail scanners can't unsubscribe people by prefetching.
+- **Auto-suppression.** Bounces and spam complaints (Resend webhook, signature-verified) and unsubscribes block the address for good and opt the business out on every channel. `mark ... do_not_contact` does the same.
+- **Daily cap** (`EMAIL_DAILY_CAP`, default 20), spaced sends, no sending on weekends or at night.
+- **Identity in every email:** your company, physical address, why they were contacted, and how to stop.
+
+**Resend's terms prohibit unsolicited bulk and cold email**, and accounts that do it get suspended. This is built as low-volume, personalized, one-to-one B2B outreach, which is the defensible end of that line, but the risk is yours to judge. Keep volume low, use a dedicated sending subdomain (e.g. `mail.mindlabfuture-ai.com`) so a problem never touches your main domain's reputation, watch bounce and complaint rates in Resend, and stop if either climbs.
+
+## Deploy on Railway
+
+One service runs the approval dashboard, the unsubscribe page, the Resend webhook and a scheduler (daily search, check, score and draft, then business-hours sending). Data is SQLite on a Railway volume, so **keep one replica**.
+
+1. New Railway project, deploy from this GitHub repo (`Dockerfile` and `railway.json` are included).
+2. Add a **volume** mounted at `/data`.
+3. Generate a public domain for the service.
+4. Set variables from `.env.example`. At minimum: `ADMIN_PASSWORD`, plus `SERPER_API_KEY` for discovery. Enter secrets in Railway's dashboard, not in chat or git.
+5. Open the domain, log in as `admin`, review the queue.
+
+To turn email on:
+1. In Resend, add and verify your sending domain (SPF, DKIM, and DMARC at least `p=none`). Use a subdomain.
+2. Create a Resend webhook to `https://<your-domain>/webhooks/resend` for `email.delivered`, `email.bounced` and `email.complained`. Copy its signing secret to `RESEND_WEBHOOK_SECRET`.
+3. Set `RESEND_API_KEY`, `SENDER_FROM_EMAIL`, `UNSUB_SECRET`, then `EMAIL_SENDING_ENABLED=true`. The service refuses to start live without them.
+4. Ramp slowly: start at `EMAIL_DAILY_CAP=5` for a week or two and check bounces and complaints before raising it.
 
 ## Rules the agent follows (on purpose)
 
 - **No scraping or logged-in bots on any platform** (Facebook, Instagram, TikTok, Shopee and Lazada all forbid it). Meta's terms forbid it and it gets your Page and personal account banned. Discovery goes through search APIs or your own manual finds.
-- **No auto-sending.** Drafts are reviewed and sent by a person from your Page inbox, a few a day. Bulk unsolicited DMs trigger Facebook spam blocks.
+- **No auto-sending of DMs.** Drafts are reviewed and sent by a person from your Page inbox, a few a day. Bulk unsolicited DMs trigger Facebook spam blocks. Email is the only automated channel, with the guardrails above. Messenger can't be used for cold outreach either: Meta's API only lets a Page message people who messaged it first.
 - **Do-not-contact list** is checked on every insert. Honor STOP replies immediately with `mark ... do_not_contact`.
 - **Philippine Data Privacy Act (RA 10173):** store only public business info (page name, public snippet, linked site), no personal profiles, and delete on request.
 - Always verify a lead by eye before messaging (the `no_store` result for pages with no linked site only means "none found").
@@ -65,4 +103,4 @@ Stdlib only, Python 3.10+. Data lives in `data/leads.db` (SQLite, git-ignored).
 ## Next steps
 
 - Push `won` leads into your CRM (GoHighLevel) and track the POPLoad follow-up (`outreach.popload_followup`).
-- Daily scheduled run that emails you the top 10 new drafts.
+- Inbound Messenger/Instagram auto-replies for people who message your Page (see the Messenger note above).

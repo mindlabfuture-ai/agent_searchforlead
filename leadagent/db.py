@@ -10,13 +10,21 @@ CREATE TABLE IF NOT EXISTS leads (
   name TEXT, snippet TEXT, website TEXT,
   shopify_status TEXT DEFAULT 'unchecked',  -- unchecked | has_shopify | no_store | marketplace_only | unknown
   score INTEGER DEFAULT 0, score_notes TEXT,
-  status TEXT DEFAULT 'new',  -- new | qualified | drafted | contacted | replied | won | lost | do_not_contact | merged
+  status TEXT DEFAULT 'new',  -- new | qualified | drafted | approved | contacted | replied | won | lost | do_not_contact | merged
   draft TEXT, source TEXT, notes TEXT,
+  email TEXT, email_source TEXT,  -- publicly listed business email and where it was found
   also_on TEXT DEFAULT '',  -- other profiles of the same business: "platform:url; platform:url"
   merged_into INTEGER,       -- set on duplicate rows (status='merged') pointing at the kept lead
   created_at TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS do_not_contact (url TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
+CREATE TABLE IF NOT EXISTS emails (
+  id INTEGER PRIMARY KEY, lead_id INTEGER, to_email TEXT, subject TEXT,
+  resend_id TEXT, status TEXT,  -- sent | delivered | bounced | complained | failed
+  error TEXT, sent_at TEXT
+);
+CREATE TABLE IF NOT EXISTS suppressed_emails (email TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
 PLATFORMS = ["facebook", "instagram", "tiktok", "shopee", "lazada", "carousell"]
@@ -86,7 +94,8 @@ def connect(path):
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     have = {r[1] for r in con.execute("PRAGMA table_info(leads)")}
-    for col, ddl in (("also_on", "TEXT DEFAULT ''"), ("merged_into", "INTEGER")):  # upgrade older DBs
+    for col, ddl in (("also_on", "TEXT DEFAULT ''"), ("merged_into", "INTEGER"),
+                     ("email", "TEXT"), ("email_source", "TEXT")):  # upgrade older DBs
         if col not in have:
             con.execute(f"ALTER TABLE leads ADD COLUMN {col} {ddl}")
     con.commit()
