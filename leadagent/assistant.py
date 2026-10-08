@@ -9,7 +9,7 @@ Rules that are enforced in code, not left to a prompt:
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, demosite, emailing, followups, popload, previewui, showcase
+from . import config, db, demosite, emailing, followups, inbox, popload, previewui, showcase
 
 CRITICAL, WARN, INFO = "critical", "warn", "info"
 RANK = {CRITICAL: 0, WARN: 1, INFO: 2}
@@ -88,7 +88,34 @@ def health(con, now=None):
     soon = [d for d in live if _utc(d["expires_at"]) <= now + timedelta(days=3)]
     if soon:
         out.append(finding(INFO, "demo_expiring", f"{len(soon)} demo site(s) expire within 3 days", "", "Extend them on the Previews page if still needed."))
+    out += inbox_health(con, now)
     out.sort(key=lambda f: RANK[f["severity"]])
+    return out
+
+
+def inbox_health(con, now):
+    out = []
+    if config.env("INBOX_ENABLED").lower() == "true":
+        missing = [v for v in ("MAIL_PASSWORD", "ANTHROPIC_API_KEY") if not config.env(v)]
+        if missing:
+            return [finding(CRITICAL, "inbox_config", f"The inbox agent is on but {', '.join(missing)} is not set",
+                            "support@ is not being read.", f"Set {', '.join(missing)} in Railway.")]
+        ok = con.execute("SELECT value FROM meta WHERE key='inbox_last_ok'").fetchone()
+        err = con.execute("SELECT value FROM meta WHERE key='inbox_last_error'").fetchone()
+        if not ok or _utc(ok[0]) < now - timedelta(minutes=15):
+            out.append(finding(CRITICAL, "inbox_stalled", "The support@ mailbox has not been read for 15 minutes" if ok else "The support@ mailbox has not been read yet",
+                               (err[0] if err else "No error recorded."), "Check MAIL_USER, MAIL_PASSWORD (an app password) and IMAP_HOST, then the Railway logs."))
+        if not (config.env("TELEGRAM_BOT_TOKEN") and config.env("TELEGRAM_CHAT_ID")):
+            out.append(finding(INFO, "inbox_no_telegram", "Telegram is not set up for the inbox", "Alerts and Send buttons only appear in the dashboard.", ""))
+    elif config.env("MAIL_PASSWORD"):
+        out.append(finding(INFO, "inbox_off", "The inbox agent is off", "A mailbox password is set but INBOX_ENABLED is not true.",
+                           "Stop the old standalone agent first, then set INBOX_ENABLED=true."))
+    old = con.execute("SELECT COUNT(*) FROM inbox_pending WHERE status='waiting' AND ts<?", ((now - timedelta(hours=24)).isoformat(timespec="seconds"),)).fetchone()[0]
+    if old:
+        out.append(finding(WARN, "inbox_old_drafts", f"{old} reply draft(s) have waited more than a day", "People who wrote to you are waiting.", "Open the Inbox page."))
+    bad = con.execute("SELECT COUNT(*) FROM inbox_messages WHERE status='error' AND attempts>=? AND ts>=?", (inbox.MAX_ATTEMPTS, (now - timedelta(days=7)).isoformat(timespec="seconds"))).fetchone()[0]
+    if bad:
+        out.append(finding(WARN, "inbox_errors", f"{bad} message(s) could not be read by the agent", "Read them yourself in the mailbox.", "Check the Railway logs."))
     return out
 
 
@@ -104,6 +131,7 @@ def attention(con, now=None):
         ("prospects that need an email you find yourself", q("SELECT COUNT(*) FROM prospects WHERE status='needs_email'"), "/prospects?show=needs_email"),
         ("failed follow-up emails", q("SELECT COUNT(*) FROM followups WHERE status='failed'"), "/clients"),
     ]
+    items.append(("reply drafts waiting for your Send (people who wrote to you)", q("SELECT COUNT(*) FROM inbox_pending WHERE status='waiting'"), "/inbox"))
     ready = 0  # previews built for leads whose day-7 email is close, but not approved yet
     for lead in con.execute("SELECT l.* FROM leads l JOIN previews p ON p.lead_id=l.id WHERE l.status='contacted' AND p.status='draft'"):
         d = showcase.days_since_first(con, lead["id"], now)
@@ -128,6 +156,7 @@ def stats(con, now=None):
         "emails_30d": one("SELECT COUNT(*) FROM emails WHERE status!='failed' AND sent_at>=?", (now - timedelta(days=30)).isoformat(timespec="seconds")),
         "suppressed": one("SELECT COUNT(*) FROM suppressed_emails"),
         "demos_live": one("SELECT COUNT(*) FROM demo_sites WHERE status='live'"),
+        "inbox_24h": dict(con.execute("SELECT COALESCE(category,status), COUNT(*) FROM inbox_messages WHERE ts>=? GROUP BY 1", ((now - timedelta(days=1)).isoformat(timespec="seconds"),)).fetchall()),
         "sending_on": config.env("EMAIL_SENDING_ENABLED").lower() == "true",
     }
 
@@ -159,6 +188,9 @@ def render_text(b, base_url=""):
     s = b["stats"]
     lines.append(f"Emails today {s['emails_today']}/{s['email_cap']}, last 30 days {s['emails_30d']}, suppressed {s['suppressed']}, "
                  f"active clients {s['clients_active']}, live demos {s['demos_live']}. Sending is {'ON' if s['sending_on'] else 'OFF (dry run)'}.")
+    inb = s.get("inbox_24h") or {}
+    if inb:
+        lines.append("Inbox, last 24 hours: " + ", ".join(f"{n} {k}" for k, n in sorted(inb.items())) + ".")
     if b["proposals"]:
         lines.append(f"{b['proposals']} suggested action(s) are waiting for your confirmation in the dashboard.")
     return "\n".join(lines)
@@ -249,6 +281,7 @@ ACTIONS = {
     "preview_skip": ("Skip the day-7 showcase email for a lead", _preview("skip")),
     "demo_unpublish": ("Take a lead's demo site down", _preview("demo_unpublish")),
     "demo_extend": ("Extend a live demo site by 30 days", _preview("demo_extend")),
+    "inbox_skip_draft": ("Skip a waiting reply draft (nothing is sent)", lambda con, args: inbox.skip_pending(con, _id(args))),
     "client_pause": ("Pause a client's follow-up emails", _client_action("pause")),
     "client_resume": ("Resume a paused client's follow-up emails", _client_action("resume")),
     "client_skip_next": ("Skip a client's next follow-up email", _client_action("skip_next")),

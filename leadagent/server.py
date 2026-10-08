@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import assistant, assistantchat, assistantui, config, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase, themezip
+from . import assistant, assistantchat, assistantui, config, inbox, inboxui, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase, themezip
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -89,7 +89,7 @@ def render_dashboard(con):
             f"<title>Lead queue</title><style>body{{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}}"
             f"section{{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}}pre{{white-space:pre-wrap}}"
             f".b{{background:{'#fde' if sending else '#ffd'};padding:8px;border-radius:6px}}button{{margin:2px}}</style>"
-            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/prospects'>POPLoad prospects</a> &middot; <a href='/assistant'>Assistant{crit}</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/prospects'>POPLoad prospects</a> &middot; <a href='/inbox'>Inbox</a> &middot; <a href='/assistant'>Assistant{crit}</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
 
 
 def render_clients_page(con, message=""):
@@ -229,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_dashboard(con))
         if u.path == "/import" and self._authed():
             return self._send(200, render_import_page())
+        if u.path == "/inbox" and self._authed():
+            return self._send(200, inboxui.render(db.connect(config.DB_PATH), csrf_token()))
         if u.path == "/assistant" and self._authed():
             return self._send(200, assistantui.render(db.connect(config.DB_PATH), csrf_token()))
         if u.path == "/prospects" and self._authed():
@@ -320,6 +322,29 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=lambda: pipeline.process_new(db.connect(config.DB_PATH), log=print),
                                  daemon=True).start()
             return self._send(200, render_import_page(results, truncated))
+        if u.path == "/webhook/form":  # Netlify's outgoing webhook for the contact form; the token is the only credential
+            tok = parse_qs(u.query).get("token", [""])[0]
+            if not config.env("WEBHOOK_TOKEN") or not hmac.compare_digest(tok, config.env("WEBHOOK_TOKEN")):
+                return self._send(401, "bad token", "text/plain")
+            if inbox.enabled():
+                try:
+                    data = json.loads(body or b"{}")
+                except ValueError:
+                    return self._send(400, "bad json", "text/plain")
+                threading.Thread(target=inbox_form_job, args=(data,), daemon=True).start()
+            return self._send(200, '{"ok": true}', "application/json")
+        if u.path == "/inbox" and self._authed():
+            f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+            if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
+                return self._send(403, "bad csrf token", "text/plain")
+            con = db.connect(config.DB_PATH)
+            pid = int(f["id"]) if (f.get("id") or "").isdigit() else 0
+            message = ""
+            if f.get("mode") == "send":
+                message = inbox.send_pending(con, pid, inbox.Mailbox(), f.get("body")) if inbox.enabled() else "The inbox agent is off, so nothing can be sent."
+            elif f.get("mode") == "skip":
+                message = inbox.skip_pending(con, pid)
+            return self._send(200, inboxui.render(con, csrf_token(), message))
         if u.path == "/assistant" and self._authed():
             f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
             if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
@@ -368,8 +393,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, "bad csrf token", "text/plain")
             con = db.connect(config.DB_PATH)
             return self._preview_page(con, int(m.group(1)), previewui.apply_action(con, int(m.group(1)), f.get("action", "")))
-        if u.path not in ("/action", "/import", "/clients", "/prospects", "/assistant"):
+        if u.path not in ("/action", "/import", "/clients", "/prospects", "/assistant", "/inbox", "/webhook/form"):
             self._send(404, "Not found", "text/plain")
+
+
+def inbox_form_job(data):
+    """A website-form enquiry, handled off the request thread."""
+    import anthropic
+    try:
+        inbox.form_enquiry(db.connect(config.DB_PATH), data, anthropic.Anthropic(), inbox.Mailbox(), inbox.Telegram())
+    except Exception as e:
+        print(f"form enquiry failed: {e!r}", flush=True)
 
 
 def tick(log=print, stop=None):
@@ -427,6 +461,7 @@ def serve():
     db.connect(config.DB_PATH)  # create/upgrade the schema before serving
     stop = threading.Event()
     threading.Thread(target=scheduler, args=(stop, lambda m: print(m, flush=True)), daemon=True).start()
+    inbox.start(stop, lambda m: print(m, flush=True))  # the inbox agent: off unless INBOX_ENABLED=true
     port = config.env_int("PORT", 8080)
     print(f"serving on :{port}", flush=True)
     try:

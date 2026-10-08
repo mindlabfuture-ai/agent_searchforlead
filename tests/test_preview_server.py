@@ -125,3 +125,25 @@ class AssistantRouteTests(PreviewServerTests):
         self.assertEqual(db.connect(config.DB_PATH).execute("SELECT status FROM prospects").fetchone()[0], "rejected")
         code, page, _ = self.call("/assistant", f"mode=ask&question=hi&csrf={csrf}".encode(), "application/x-www-form-urlencoded")
         self.assertEqual(code, 200)
+
+
+@mock.patch.dict(os.environ, {**ENV, "WEBHOOK_TOKEN": "form-secret", "INBOX_ENABLED": ""})
+class InboxRouteTests(PreviewServerTests):
+    def test_form_webhook_and_inbox_page(self):
+        self.assertEqual(self.call("/webhook/form", b"{}", "application/json", auth=False)[0], 401)
+        self.assertEqual(self.call("/webhook/form?token=wrong", b"{}", "application/json", auth=False)[0], 401)
+        self.assertEqual(self.call("/webhook/form?token=form-secret", b'{"data": {"email": "a@b.ph"}}', "application/json", auth=False)[0], 200)
+        with mock.patch.dict(os.environ, {"WEBHOOK_TOKEN": ""}):
+            self.assertEqual(self.call("/webhook/form?token=", b"{}", "application/json", auth=False)[0], 401)  # no token configured: closed
+        self.assertEqual(self.call("/inbox", auth=False)[0], 401)
+        code, page, _ = self.call("/inbox"); self.assertEqual(code, 200); self.assertIn(b"Inbox", page)
+        import hashlib, hmac
+        csrf = hmac.new(config.env("ADMIN_PASSWORD").encode(), b"csrf", hashlib.sha256).hexdigest()
+        self.assertEqual(self.call("/inbox", b"mode=skip&id=1&csrf=bad", "application/x-www-form-urlencoded")[0], 403)
+        con = db.connect(config.DB_PATH)
+        con.execute("INSERT INTO inbox_pending (email,subject,body,kind,ts) VALUES ('a@b.ph','s','b','reply','2026-10-14T00:00:00+00:00')"); con.commit()
+        code, page, _ = self.call("/inbox", f"mode=skip&id=1&csrf={csrf}".encode(), "application/x-www-form-urlencoded")
+        self.assertEqual((code, b"Skipped." in page), (200, True))
+        con.execute("INSERT INTO inbox_pending (email,subject,body,kind,ts) VALUES ('a@b.ph','s','b','reply','2026-10-14T00:00:00+00:00')"); con.commit()
+        code, page, _ = self.call("/inbox", f"mode=send&id=2&body=hi&csrf={csrf}".encode(), "application/x-www-form-urlencoded")
+        self.assertIn(b"agent is off", page)                                                     # nothing is sent while the agent is off

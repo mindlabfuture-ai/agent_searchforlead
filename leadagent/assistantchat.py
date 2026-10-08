@@ -20,7 +20,8 @@ You help run a small lead-generation system. It has four parts:
 1. Store-build leads: Filipino sellers with no Shopify store. The owner approves each first email by hand. 7 or more days later a showcase email with a store preview can follow, also approved by hand. The owner can publish a temporary demo site and download a Shopify theme for each preview.
 2. POPLoad prospects: existing Shopify stores that take GCash or bank transfer. The owner approves each one, which starts a 3-email sequence.
 3. Clients: stores that were built and handed over, with a 4-email follow-up sequence.
-4. Daily health checks and a daily brief.
+4. The support inbox: a mailbox agent reads support@mindlabfuture-ai.com and the website form, filters spam, triages, and drafts replies that wait for the owner's Send. A reply to one of our outreach emails stops that lead's sequence automatically.
+5. Daily health checks and a daily brief.
 
 How you work:
 - Use your tools to look at live data before answering questions about the system. Never guess numbers, names or statuses.
@@ -35,8 +36,8 @@ How you work:
 TOOLS = [
     {"name": "get_overview", "description": "The current daily-brief style overview: health findings, items waiting for the owner, and counts.",
      "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
-    {"name": "list_items", "description": "List records. kind is one of leads, prospects, clients, previews, demos, failed_emails. status optionally filters (not for previews, demos or failed_emails).",
-     "input_schema": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["leads", "prospects", "clients", "previews", "demos", "failed_emails"]},
+    {"name": "list_items", "description": "List records. kind is one of leads, prospects, clients, previews, demos, failed_emails, inbox (messages the support mailbox agent read), inbox_drafts (reply drafts waiting for the owner). status optionally filters (not for previews, demos or failed_emails).",
+     "input_schema": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["leads", "prospects", "clients", "previews", "demos", "failed_emails", "inbox", "inbox_drafts"]},
                                                        "status": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 30}},
                       "required": ["kind"], "additionalProperties": False}},
     {"name": "get_item", "description": "Full detail of one lead, prospect or client, with its email history.",
@@ -80,6 +81,10 @@ def run_tool(con, name, args):
                 return [dict(r) for r in con.execute("SELECT lead_id, slug, url, status, expires_at FROM demo_sites ORDER BY expires_at LIMIT ?", (limit,))]
             if kind == "failed_emails":
                 return [dict(r) for r in con.execute("SELECT lead_id, to_email, subject, error, sent_at FROM emails WHERE status='failed' ORDER BY id DESC LIMIT ?", (limit,))]
+            if kind == "inbox":
+                return [dict(r) for r in con.execute("SELECT id, ts, source, addr, subject, category, priority, score, summary, status, matched FROM inbox_messages" + (" WHERE status=?" if status else "") + " ORDER BY id DESC LIMIT ?", (*flt[1], limit))]
+            if kind == "inbox_drafts":
+                return [dict(r) for r in con.execute("SELECT id, email, subject, kind, ts, substr(body,1,400) AS body FROM inbox_pending WHERE status='waiting' ORDER BY id LIMIT ?", (limit,))]
             return {"error": "unknown kind"}
         if name == "get_item":
             kind, iid = args["kind"], int(args["id"])

@@ -129,6 +129,18 @@ Open **Assistant** in the dashboard (`/assistant`). It watches the whole system 
 
 What it can never do, enforced in code and tests: approve a first email, a showcase email, a POPLoad sequence or a demo site, send anything to a lead, or publish. It can stop things; starting outreach stays yours, one by one. Text from leads and websites reaches the model only as tool data, and the worst it can lead to is a suggestion you can dismiss.
 
+## The support inbox (moved here from sms-compliance)
+
+The agent that watches `support@mindlabfuture-ai.com` now runs inside this service, under the assistant. It reads new mail and the website contact form, moves spam to an `Agent-Spam` folder, triages with Claude (category, priority, lead score, a one-line summary), tells you on Telegram and on the **Inbox** page, and drafts a reply that waits for your **Send** (you can edit it first). Quiet sales enquiries get gentle follow-up drafts after 2, 5 and 10 days, in business hours. What it may say is in `leadagent/inbox_knowledge.md`.
+
+What changed from the standalone agent:
+- **Replies to our own outreach are recognised** (by address, or by the business's own domain) and stop that lead's sequence on their own, so nobody is emailed again after answering. "Stop", "unsubscribe" and similar suppress the address for good, with no model involved.
+- **A reply to someone we cold-emailed is always a draft**, even in `REPLY_MODE=auto`. Auto-replies stay limited to people who wrote in on their own, and never for urgent messages.
+- **Nothing gets lost**: a message the model fails on is retried, then reported to you and left unread in the mailbox.
+- Subjects and summaries are stored, never message bodies. The assistant sees counts, drafts and problems, and warns if the mailbox has not been read for 15 minutes.
+
+**Switching over** (do it in this order, or two agents will answer the same mail): 1) stop the old `agent` service in the Railway project `mindlab-inbound-agent`; 2) copy its variables into this service (`ANTHROPIC_API_KEY`, `AGENT_MODEL`, `IMAP_HOST`, `SMTP_HOST`, `SMTP_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM_NAME`, `POLL_SECONDS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WEBHOOK_TOKEN`, `REPLY_MODE`, `AUTO_CONFIDENCE`, `NURTURE_DAYS`; same names, so a copy-paste works); 3) set `INBOX_ENABLED=true`; 4) in Netlify, point the contact form's outgoing webhook to `https://leads.mindlabfuture-ai.com/webhook/form?token=<WEBHOOK_TOKEN>`. Start with `REPLY_MODE=draft`.
+
 ## POPLoad prospects (existing Shopify stores)
 
 A separate track for stores that already run on Shopify and take GCash or bank transfer, to offer POPLoad (customers upload the receipt, you approve it in one click). Open **POPLoad prospects** in the dashboard, or use `python -m leadagent prospects import FILE | verify | list | run`.
