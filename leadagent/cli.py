@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, emailing, pipeline, search
+from . import config, db, dedupe, emailing, importer, pipeline, search
 
 
 def load_env():
@@ -32,11 +32,12 @@ def cmd_search(a, con):
 
 def cmd_import(a, con):
     """CSV columns: url,name,snippet,website (any supported platform; `fb_url` also accepted)."""
-    n = 0
-    for row in csv.DictReader(open(a.file, newline="", encoding="utf-8")):
-        n += db.upsert_lead(con, row.get("url") or row["fb_url"], row.get("name", ""), row.get("snippet", ""),
-                            row.get("website", ""), source="import")
-    print("added", n)
+    results, truncated = importer.add_rows(con, importer.parse_csv(open(a.file, encoding="utf-8").read()), source="import")
+    for label, status, note in results:
+        if status != "added" or note:
+            print(f"  {status}: {label} {note}")
+    print("added", sum(1 for _, s, _ in results if s == "added"), "of", len(results),
+          "(only the first %d rows are read)" % importer.MAX_ROWS if truncated else "")
     dedupe.run(con)
 
 

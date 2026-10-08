@@ -57,6 +57,15 @@ python -m unittest discover -s tests
 
 Stdlib only, Python 3.10+ (the Docker image uses 3.12). Data lives in `data/leads.db` (SQLite, git-ignored).
 
+## Adding leads by hand
+
+Open **Import leads** on the dashboard (`/import`) to add one lead (URL, name, notes, website, email) or paste a CSV of up to 200 lines: `url,name,notes,website,email`. Only the URL is required, and a header row is optional. The CLI `import` command takes the same format.
+
+- Duplicates, businesses that opted out, and addresses that bounced are skipped, and the page says why.
+- New leads are checked, scored and drafted in the background, then show up in the queue. Leads you add yourself stay in the queue even with a low score, unless the business is already on Shopify.
+- Only add an email you found publicly listed for the business.
+- Lead websites are fetched to look for Shopify, so the fetcher only talks to public web addresses (http/https on ports 80/443). Internal, loopback, link-local and cloud-metadata addresses are refused, including via redirects.
+
 ## Email outreach with Resend
 
 Qualified leads that have a **publicly listed business email** can get one personalized email. The agent finds addresses on the seller's own website or search snippet (never a personal profile), or you add one with `set-email ID address`.

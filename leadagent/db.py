@@ -90,7 +90,8 @@ def normalize_fb_url(url):  # backwards-compatible helper
 def connect(path):
     import os
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    con = sqlite3.connect(path)
+    con = sqlite3.connect(path, timeout=30)
+    con.execute("PRAGMA journal_mode=WAL")
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     have = {r[1] for r in con.execute("PRAGMA table_info(leads)")}

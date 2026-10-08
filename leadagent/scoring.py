@@ -35,3 +35,4 @@ def score_lead(lead):
 
 
 QUALIFY_AT = 50
+MANUAL_SOURCES = ('dashboard', 'import')  # a person chose these, so they stay in the queue unless on Shopify
