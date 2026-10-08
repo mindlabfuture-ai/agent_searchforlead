@@ -188,7 +188,7 @@ def can_send(con, lead):
         return False, "suppressed"
     if con.execute("SELECT 1 FROM do_not_contact WHERE url=?", (lead["url"],)).fetchone():
         return False, "do not contact"
-    if con.execute("SELECT 1 FROM emails WHERE (lead_id=? OR to_email=?) AND status!='failed'",
+    if con.execute("SELECT 1 FROM emails WHERE (lead_id=? OR to_email=?) AND status!='failed' AND kind='initial'",
                    (lead["id"], email)).fetchone():
         return False, "already emailed"
     if con.execute("SELECT COUNT(*) FROM emails WHERE lead_id=? AND status='failed'", (lead["id"],)).fetchone()[0] >= MAX_FAILURES:
@@ -221,7 +221,7 @@ def send_one(con, lead, post=None, base_url=None, enabled=None, log=print):
                     (lead["id"], lead["email"], msg["subject"], "failed", str(e)[:300], db.now()))
         con.commit()
         return "failed"
-    con.execute("INSERT INTO emails (lead_id,to_email,subject,resend_id,status,sent_at) VALUES (?,?,?,?,?,?)",
+    con.execute("INSERT INTO emails (lead_id,to_email,subject,resend_id,status,sent_at,kind) VALUES (?,?,?,?,?,?,'initial')",
                 (lead["id"], lead["email"], msg["subject"], res.get("id"), "sent", db.now()))
     con.execute("UPDATE leads SET status='contacted', updated_at=? WHERE id=?", (db.now(), lead["id"]))
     con.commit()

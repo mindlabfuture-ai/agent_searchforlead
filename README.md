@@ -55,7 +55,7 @@ python -m leadagent serve         # dashboard + scheduler (what Railway runs)
 python -m unittest discover -s tests
 ```
 
-Stdlib only, Python 3.10+ (the Docker image uses 3.12). Data lives in `data/leads.db` (SQLite, git-ignored).
+Python 3.10+ (the Docker image uses 3.12). Standard library plus Pillow (`pip install -r requirements.txt`) for the store-preview images. Data lives in `data/leads.db` (SQLite, git-ignored).
 
 ## Adding leads by hand
 
@@ -94,7 +94,7 @@ The email is branded to match mindlabfuture-ai.com (dark navy card, brass accent
 Guardrails, all enforced in code:
 - **Human approval per lead.** Nothing sends unless you approved that lead.
 - **Dry run by default.** Set `EMAIL_SENDING_ENABLED=true` only after domain setup. `python -m leadagent send` previews until then.
-- **One email per business, ever.** No automatic follow-ups. A repeat to the same lead or address is blocked, and Resend idempotency keys stop double-sends on retries.
+- **At most two emails per business, ever:** the first email, and one store-preview email 7+ days later that you approve by hand (see below). Nothing else is sent to a lead. A repeat to the same lead or address is blocked, and Resend idempotency keys stop double-sends on retries.
 - **One-click unsubscribe** (`List-Unsubscribe` + `List-Unsubscribe-Post`, RFC 8058) and a visible link. The page needs a button press, so mail scanners can't unsubscribe people by prefetching.
 - **Auto-suppression.** Bounces and spam complaints (Resend webhook, signature-verified) and unsubscribes block the address for good and opt the business out on every channel. `mark ... do_not_contact` does the same.
 - **Daily cap** (`EMAIL_DAILY_CAP`, default 20), spaced sends, no sending on weekends or at night.
@@ -117,6 +117,17 @@ To turn email on:
 2. Create a Resend webhook to `https://<your-domain>/webhooks/resend` for `email.delivered`, `email.bounced` and `email.complained`. Copy its signing secret to `RESEND_WEBHOOK_SECRET`.
 3. Set `RESEND_API_KEY`, `SENDER_FROM_EMAIL`, `UNSUB_SECRET`, then `EMAIL_SENDING_ENABLED=true`. The service refuses to start live without them.
 4. Ramp slowly: start at `EMAIL_DAILY_CAP=5` for a week or two and check bounces and complaints before raising it.
+
+## Store previews (the day-7 email)
+
+Seven days after the first email, a lead that has not replied can get one more email showing a mock-up of the store you would build for them. Nothing is sent until you approve it.
+
+1. From day 5 the agent builds a draft preview for each contacted lead: it reads the lead's own website (theme colour, logo, products), picks a palette, and falls back to a generated logo and clearly labelled "(sample)" products.
+2. Open **Previews** in the dashboard. For each lead you can upload page screenshots (used for the palette only, never shown or published), the logo, up to three products (name, price, photo), and set the store name, tagline, style, niche or exact brand colours. Uploaded product photos and the logo drive the palette; platform blue from screenshots is ignored.
+3. The page shows the exact email. **Approve** it and it sends once the lead is 7+ days past the first email, inside business hours and the shared daily cap. Skip, mark replied or do-not-contact from the same page.
+4. `theme.json` and a generated `logo.svg` can be downloaded per lead. CLI: `preview <lead_id>` rebuilds a preview, `showcase [--force]` sends approved ones that are due (dry run unless `EMAIL_SENDING_ENABLED=true`).
+
+Uploads are decoded and re-encoded (metadata stripped, non-images rejected). Only the logo and product images used in the email are served, through signed unlisted links; screenshots are visible only to you after login. The agent never scrapes Facebook or Instagram, so those images come from you.
 
 ## Rules the agent follows (on purpose)
 

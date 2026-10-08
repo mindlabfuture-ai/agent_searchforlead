@@ -45,6 +45,34 @@ class _PublicOnlyRedirects(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_PublicOnlyRedirects)
 
 
+IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"))
+
+
+def sniff_image(data):
+    """Image type from the bytes themselves (never from a header or file name). SVG is deliberately unsupported."""
+    for magic, ctype in IMAGE_MAGIC:
+        if data.startswith(magic):
+            return ctype
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def fetch_image(url, max_bytes=300_000, timeout=15):
+    """Download a logo or product photo: public addresses only, PNG/JPEG/GIF/WebP only, size capped.
+    Returns (bytes, content_type). Raises ValueError/URLError/OSError otherwise."""
+    assert_public(url)
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "image/*"})
+    with _opener.open(req, timeout=timeout) as r:
+        data = r.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError("image too large")
+    ctype = sniff_image(data)
+    if not ctype:
+        raise ValueError("not a supported image (PNG, JPEG, GIF or WebP)")
+    return data, ctype
+
+
 def fetch(url, timeout=15):
     assert_public(url)
     req = urllib.request.Request(url, headers={"User-Agent": UA})

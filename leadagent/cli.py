@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, search
+from . import config, db, dedupe, emailing, followups, importer, pipeline, previews, search, showcase
 
 
 def load_env():
@@ -106,6 +106,22 @@ def cmd_followups(a, con):
     print(n, "sent" if live else "(dry run: nothing sent)")
 
 
+def cmd_preview(a, con):
+    """Build (or rebuild) the store preview for a lead from its website and anything already uploaded."""
+    lead = con.execute("SELECT * FROM leads WHERE id=?", (a.lead_id,)).fetchone()
+    if not lead:
+        raise SystemExit("unknown lead id")
+    pv = previews.generate(con, lead)
+    print(f"preview for {pv['name']}: brand {pv['brand']} ({pv['brand_note']}), logo {pv['logo']['kind']}, "
+          f"{len(pv['products'])} product(s){' (samples)' if any(p['sample'] for p in pv['products']) else ''}. Review it at /previews/{a.lead_id}.")
+
+
+def cmd_showcase(a, con):
+    """Send approved showcase emails that are due (dry run unless EMAIL_SENDING_ENABLED=true)."""
+    n = showcase.run(con, force=a.force)
+    print(n, "sent" if config.env("EMAIL_SENDING_ENABLED").lower() == "true" else "(dry run: nothing sent)")
+
+
 def cmd_serve(a, con):
     from . import server
     server.serve()
@@ -160,6 +176,9 @@ def main(argv=None):
     cs.add_parser("list").set_defaults(f=cmd_client_list)
     s = sub.add_parser("followups", help="send due follow-ups now (dry run unless enabled)")
     s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_followups)
+    s = sub.add_parser("preview", help="build a store preview for a lead"); s.add_argument("lead_id", type=int); s.set_defaults(f=cmd_preview)
+    s = sub.add_parser("showcase", help="send approved showcase emails that are due (dry run unless enabled)")
+    s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_showcase)
     sub.add_parser("serve", help="run the dashboard + scheduler (Railway)").set_defaults(f=cmd_serve)
     sub.add_parser("score").set_defaults(f=cmd_score)
     s = sub.add_parser("draft"); s.add_argument("--limit", type=int, default=25); s.set_defaults(f=cmd_draft)
