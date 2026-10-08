@@ -10,11 +10,19 @@ How MindLab turns an outreach reply into a live store, partner commission and PO
 ## Steps
 1. **Agree** with the merchant (reply to the email). Get their business name, products, prices, GCash/Maya/bank details, shipping method, and the address for the store settings (a wrong address can cause extra tax on their invoice).
 2. **Create** a client transfer store in the Dev Dashboard. Build theme, products, pages, shipping, and a policy page.
-3. **Install POPLoad** on it and set the payment method(s) the widget should appear for. Confirm POPLoad can be installed on a client transfer store at this point (it was still in Shopify review on the website). If it cannot yet, do not promise it in the email.
+3. **Install POPLoad** on it and set the payment method(s) the widget should appear for. See "POPLoad on a transfer store" below: it should work, but there are catches to check first.
 4. **Before transferring**, make sure Shopify Payments (even test mode), Shopify Balance, Credit and Capital are not active. The transfer fails if they are.
 5. **Send the transfer** (*Transfer store*, opens Settings, General). The merchant accepts and chooses their plan. Starter and Lite plans do not earn commission.
 6. **Ask for collaborator access** right after. Once the store is transferred it leaves your organization, so you need a collaborator request for ongoing work and for POPLoad support.
 7. **Record it** in the lead list (status `won`) and note the date, plan and whether POPLoad is installed.
+
+## POPLoad on a transfer store
+Yes, you can build the store with POPLoad installed and then transfer it. Three things to know:
+1. **Installable?** While a client transfer store is in your organization, Shopify says "you can only install free apps and partner-friendly apps. Custom and draft apps can't be installed." It does not define "partner-friendly". POPLoad was still in Shopify's review, and community reports say apps awaiting review can be blocked from installing. **Test the install on your first transfer store before promising it to a merchant.** If it is blocked, the fallback is to hand the store over first, then install POPLoad from the merchant's side with a collaborator request, and say so in the email.
+2. **Billing before and after.** POPLoad's own code (`web/lib/billing.js`) creates *test* subscriptions on development stores and real ones only when `BILLING_TEST=false` on a live shop. Test charges are cancelled when a store goes live, so the merchant must approve a real plan after the handover. Keep the store on POPLoad's free tier (10 uploads) while you build, then tell the merchant about the monthly charge before they accept the transfer. Paid plans can't be approved on client transfer stores anyway.
+3. **After transfer.** The store leaves your organization. Ask for collaborator access immediately. Consider handling Shopify's `shop/update` webhook in POPLoad to notice the switch from development to live.
+
+Before transferring: no real transactions can run on a transfer store, the online store stays in private mode, and Shopify Payments, Balance, Credit and Capital must be off.
 
 ## Economics (check against your Partner Dashboard)
 | Item | Amount | Notes |
