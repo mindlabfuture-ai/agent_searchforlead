@@ -24,18 +24,18 @@ def _p(text, color=TEXT, size=16, extra=""):
             f"{E(text)}</p>")
 
 
-def _offer_item(text):
-    """Bold the lead-in before a short 'Label: ...' so the three terms are scannable."""
+def _offer_item(text, mark="&#10003;"):
+    """Bold the lead-in before a short 'Label: ...' so the terms are scannable."""
     head, sep, rest = text.partition(": ")
     body = f"<strong style=\"color:{BRASS_HI};font-weight:600\">{E(head)}:</strong> {E(rest)}" if sep and len(head) <= 40 else E(text)
-    return (f"<tr><td width=\"22\" valign=\"top\" style=\"padding:0 0 10px;font-size:15px;line-height:1.55;color:{BRASS}\">&#10003;</td>"
+    return (f"<tr><td width=\"26\" valign=\"top\" style=\"padding:0 0 10px;font-family:{HEAD};font-size:15px;line-height:1.55;font-weight:600;color:{BRASS}\">{mark}</td>"
             f"<td style=\"padding:0 0 10px;font-family:{BODY};font-size:15px;line-height:1.55;color:{TEXT}\">{body}</td></tr>")
 
 
-def _offer_card(title, items, notes=()):
+def _offer_card(title, items, notes=(), numbered=False):
     if not items:
         return ""
-    rows = "".join(_offer_item(i) for i in items)
+    rows = "".join(_offer_item(i, f"{n}." if numbered else "&#10003;") for n, i in enumerate(items, 1))
     return (f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:8px 0 20px\"><tr>"
             f"<td bgcolor=\"{CARD2}\" style=\"background:{CARD2};border:1px solid {BRASS};border-radius:14px;padding:20px 22px 10px\">"
             f"<div style=\"margin:0 0 12px;font-family:{HEAD};font-size:17px;font-weight:600;letter-spacing:-0.01em;color:{BRASS_HI}\">{E(title.rstrip(':'))}</div>"
@@ -56,6 +56,24 @@ def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signa
                     f"style=\"margin:0 0 16px\"><tr><td style=\"border-left:3px solid {BRASS};padding:4px 0 4px 14px;"
                     f"font-family:{BODY};font-size:15px;line-height:1.6;color:{MUTED}\">{E(callout)}</td></tr></table>"
                     if callout else "")
+    main = f"""<h1 class="h1" style="margin:0 0 20px;font-family:{HEAD};font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-0.02em;color:{TEXT}">{E(subject)}</h1>
+{_p(greeting)}{_p(found)}{_p(pitch)}{callout_html}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 12px"><tr>{chips}</tr></table>
+{_offer_card(offer_title, offer_items, offer_notes)}{_p(ask)}
+{_button(cta_label, cta_mailto)}
+{_p(reply, MUTED, 14)}"""
+    why = f"You're getting this one-time message because this business address is publicly listed at {E(source)}."
+    return _page(subject, preheader, main, signature, why, company, address, unsub_url, logo_url, site_url)
+
+
+def _button(label, href):
+    return (f"<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:8px 0 22px\"><tr>"
+            f"<td align=\"center\" bgcolor=\"{BRASS}\" style=\"border-radius:999px;background:{BRASS};background-image:linear-gradient(180deg,{BRASS_HI},{BRASS})\">"
+            f"<a href=\"{E(href)}\" style=\"display:inline-block;padding:15px 28px;font-family:{BODY};font-size:15px;font-weight:600;color:{BRASS_INK};text-decoration:none;border-radius:999px\">{E(label)}</a></td></tr></table>")
+
+
+def _page(subject, preheader, main, signature, why, company, address, unsub_url, logo_url=LOGO_URL, site_url=SITE_URL):
+    """The shared frame: header with logo, brass bar, card, signature, footer with unsubscribe."""
     sign = "<br>".join(E(line) for line in signature)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -79,14 +97,7 @@ def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signa
 <tr><td height="3" bgcolor="{BRASS}" style="height:3px;line-height:3px;font-size:0;background:{BRASS};background-image:linear-gradient(90deg,{BRASS_HI},{BRASS});border-radius:3px 3px 0 0">&nbsp;</td></tr>
 
 <tr><td class="px" bgcolor="{CARD}" style="background:{CARD};padding:34px 36px 12px;border-left:1px solid {LINE};border-right:1px solid {LINE}">
-<h1 class="h1" style="margin:0 0 20px;font-family:{HEAD};font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-0.02em;color:{TEXT}">{E(subject)}</h1>
-{_p(greeting)}{_p(found)}{_p(pitch)}{callout_html}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 12px"><tr>{chips}</tr></table>
-{_offer_card(offer_title, offer_items, offer_notes)}{_p(ask)}
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 22px"><tr>
-<td align="center" bgcolor="{BRASS}" style="border-radius:999px;background:{BRASS};background-image:linear-gradient(180deg,{BRASS_HI},{BRASS})">
-<a href="{E(cta_mailto)}" style="display:inline-block;padding:15px 28px;font-family:{BODY};font-size:15px;font-weight:600;color:{BRASS_INK};text-decoration:none;border-radius:999px">{E(cta_label)}</a></td></tr></table>
-{_p(reply, MUTED, 14)}
+{main}
 </td></tr>
 
 <tr><td class="px" bgcolor="{CARD}" style="background:{CARD};padding:6px 36px 30px;border:1px solid {LINE};border-top:0;border-radius:0 0 14px 14px">
@@ -95,13 +106,22 @@ def render_html(*, subject, preheader, greeting, found, pitch, ask, reply, signa
 </td></tr>
 
 <tr><td class="px" style="padding:20px 8px 8px;font-family:{BODY};font-size:12px;line-height:1.6;color:{MUTED};text-align:center">
-You're getting this one-time message because this business address is publicly listed at {E(source)}.<br>
+{why}<br>
 {E(company)} &middot; {E(address)}<br>
 <a href="{E(site_url)}" style="color:{BRASS_HI};text-decoration:underline">mindlabfuture-ai.com</a> &nbsp;&middot;&nbsp;
 <a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> or just reply STOP.
 </td></tr>
 
 </table></td></tr></table></body></html>"""
+
+
+def render_followup(*, subject, preheader, greeting, intro, list_title, items, closing, cta_label, cta_mailto,
+                    signature, unsub_url, why, company, address, logo_url=LOGO_URL, site_url=SITE_URL):
+    """A client email after handover: headline, short intro, one numbered checklist, one button."""
+    main = f"""<h1 class="h1" style="margin:0 0 20px;font-family:{HEAD};font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-0.02em;color:{TEXT}">{E(subject)}</h1>
+{_p(greeting)}{_p(intro)}{_offer_card(list_title, items, numbered=True)}{_p(closing)}
+{_button(cta_label, cta_mailto)}"""
+    return _page(subject, preheader, main, signature, E(why), company, address, unsub_url, logo_url, site_url)
 
 
 def cta_mailto(reply_to, name, taglish=False):

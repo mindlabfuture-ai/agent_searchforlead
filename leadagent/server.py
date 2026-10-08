@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, emailing, importer, pipeline
+from . import config, db, dedupe, emailing, followups, importer, pipeline
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -72,7 +72,7 @@ def render_dashboard(con):
                                      f"<input type=hidden name=csrf value={csrf_token()}><input type=hidden name=id value={r['id']}>"
                                      f"<button name=action value={action}>{label}</button></form>")
         approve = btn("approve", "Approve email") if r["email"] and r["status"] != "approved" else ""
-        cards.append(f"""<section><h3>{E(r['name'] or r['url'])} <small>{E(r['platform'])} &middot; score {r['score']} &middot; {E(r['status'])}</small></h3>
+        cards.append(f"""<section><h3>{E(r['name'] or r['url'])} <small>#{r['id']} &middot; {E(r['platform'])} &middot; score {r['score']} &middot; {E(r['status'])}</small></h3>
 <a href="{E(r['url'])}" rel="noopener noreferrer" target=_blank>{E(r['url'])}</a>
 <p>{E(r['score_notes'])}</p><p>Also on: {E(r['also_on'])}</p>
 <p>Email: <b>{E(r['email'] or 'none')}</b> <small>{E(r['email_source'])}</small></p>
@@ -86,7 +86,51 @@ def render_dashboard(con):
             f"<title>Lead queue</title><style>body{{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}}"
             f"section{{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}}pre{{white-space:pre-wrap}}"
             f".b{{background:{'#fde' if sending else '#ffd'};padding:8px;border-radius:6px}}button{{margin:2px}}</style>"
-            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+
+
+def render_clients_page(con, message=""):
+    """Clients we built a store for: add one at handover, watch the follow-up schedule, pause or skip."""
+    sending = config.env("EMAIL_SENDING_ENABLED").lower() == "true"
+    banner = ("LIVE: due follow-ups are sent Mon-Fri 9-17 PHT" if sending
+              else "DRY RUN: follow-ups are not sent until EMAIL_SENDING_ENABLED=true")
+    tok = f"<input type=hidden name=csrf value={csrf_token()}>"
+    msg = f"<p class=b style='background:#eef'>{E(message)}</p>" if message else ""
+    today = followups.today_pht().isoformat()
+    cards = []
+    for c in con.execute("SELECT * FROM clients ORDER BY (status='active') DESC, id DESC LIMIT 200").fetchall():
+        fu = con.execute("SELECT * FROM followups WHERE client_id=? ORDER BY due_at, id", (c["id"],)).fetchall()
+        marks = {"sent": "sent", "skipped": "skipped", "failed": "FAILED", "pending": "due"}
+        line = " &middot; ".join(f"{E(f['step'])}: {marks.get(f['status'], E(f['status']))} {E((f['sent_at'] or f['due_at'])[:10])}"
+                                 f"{' (' + E(f['note']) + ')' if f['note'] and f['status'] != 'pending' else ''}" for f in fu)
+        link = (f"<a href=\"{E(c['store_url'])}\" rel=\"noopener noreferrer\" target=_blank>{E(c['store_url'])}</a>"
+                if c["store_url"] else "no store link")
+        def btn(action, label):
+            return (f"<form method=post action=/clients style=display:inline>{tok}<input type=hidden name=mode value=action>"
+                    f"<input type=hidden name=client_id value={c['id']}><button name=action value={action}>{label}</button></form>")
+        buttons = (btn("pause", "Pause") if c["status"] == "active" else btn("resume", "Resume") if c["status"] == "paused" else "")
+        buttons += btn("skip_next", "Skip next") + btn("popload_installed", "POPLoad installed") + btn("popload_active", "POPLoad in use") \
+            + (btn("done", "Mark done") if c["status"] != "done" else "")
+        cards.append(f"<section><h3>{E(c['name'])} <small>#{c['id']} &middot; {E(c['status'])} &middot; {E(c['lang'])} &middot; "
+                     f"POPLoad {E(c['popload_status'])}</small></h3><p>{link}<br>{E(c['email'])} &middot; handed over {E(c['handed_over_at'])}</p>"
+                     f"<p><small>{line}</small></p>{buttons}</section>")
+    stats = f"Follow-ups sent today: {followups.sent_today(con)}/{config.env_int('FOLLOWUP_DAILY_CAP', 20)}"
+    return (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>Clients</title>{PAGE_STYLE}<p><a href='/'>&larr; Lead queue</a></p><h1>Clients</h1>"
+            f"<p class=b style='background:{'#fde' if sending else '#ffd'}'>{E(banner)}</p><p>{stats}</p>{msg}"
+            f"<section><h3>Add a client (after you hand over their store)</h3><form method=post action=/clients>{tok}<input type=hidden name=mode value=add>"
+            f"<label>Business name</label><input type=text name=name required>"
+            f"<label>Their business email (the one they asked you to use)</label><input type=text name=email required>"
+            f"<label>Store link (https://...)</label><input type=text name=store_url>"
+            f"<label>Handed over on (YYYY-MM-DD, blank = today)</label><input type=text name=handed_over value='{today}'>"
+            f"<label>Language</label><select name=lang><option value=en>English</option><option value=tl>Taglish</option></select>"
+            f"<label>POPLoad</label><select name=popload_status><option value=not_installed>Not installed yet</option>"
+            f"<option value=installed>Installed</option><option value=active>In use</option></select>"
+            f"<label>Lead # (optional, from the queue; marks that lead as won)</label><input type=text name=lead_id>"
+            f"<p><button>Add client and schedule follow-ups</button></p></form>"
+            f"<p><small>Schedule: welcome on handover day, POPLoad check on day 7, growth tips on day 30, next-step offer on day 60. "
+            f"Each is skipped if it is more than a week late, and no two go out within 3 days of each other.</small></p></section>"
+            f"{''.join(cards) or '<p>No clients yet.</p>'}")
 
 
 def apply_action(con, lead_id, action, email=""):
@@ -164,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_dashboard(con))
         if u.path == "/import" and self._authed():
             return self._send(200, render_import_page())
+        if u.path == "/clients" and self._authed():
+            return self._send(200, render_clients_page(db.connect(config.DB_PATH)))
         if u.path != "/":
             self._send(404, "Not found", "text/plain")
 
@@ -200,7 +246,23 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=lambda: pipeline.process_new(db.connect(config.DB_PATH), log=print),
                                  daemon=True).start()
             return self._send(200, render_import_page(results, truncated))
-        if u.path not in ("/action", "/import"):
+        if u.path == "/clients" and self._authed():
+            f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+            if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
+                return self._send(403, "bad csrf token", "text/plain")
+            con = db.connect(config.DB_PATH)
+            message = ""
+            if f.get("mode") == "add":
+                lead = f.get("lead_id", "").strip()
+                cid, err = followups.add_client(
+                    con, f.get("name"), f.get("email"), f.get("store_url"), f.get("lang", "en"),
+                    f.get("handed_over", "").strip() or None, int(lead) if lead.isdigit() else None,
+                    f.get("popload_status", "not_installed"))
+                message = f"Could not add: {err}" if err else "Client added. Follow-ups are scheduled."
+            elif f.get("mode") == "action" and (f.get("client_id") or "").isdigit():
+                followups.apply_action(con, int(f["client_id"]), f.get("action", ""))
+            return self._send(200, render_clients_page(con, message))
+        if u.path not in ("/action", "/import", "/clients"):
             self._send(404, "Not found", "text/plain")
 
 
@@ -216,7 +278,9 @@ def tick(log=print, stop=None):
         con.commit()
         pipeline.run_daily(con, log=log, today=pht.date())
     if config.env("EMAIL_SENDING_ENABLED").lower() == "true":
-        emailing.run_sender(con, log=log, sleep=stop.wait if stop else time.sleep)
+        wait = stop.wait if stop else time.sleep
+        emailing.run_sender(con, log=log, sleep=wait)
+        followups.run(con, log=log, sleep=wait)
 
 
 def scheduler(stop, log=print):

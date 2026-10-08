@@ -66,6 +66,19 @@ Open **Import leads** on the dashboard (`/import`) to add one lead (URL, name, n
 - Only add an email you found publicly listed for the business.
 - Lead websites are fetched to look for Shopify, so the fetcher only talks to public web addresses (http/https on ports 80/443). Internal, loopback, link-local and cloud-metadata addresses are refused, including via redirects.
 
+## Follow-ups after you hand over a store
+
+When a merchant accepts their transferred store, add them under **Clients** in the dashboard (`/clients`), or with `python -m leadagent client add "Glow PH" owner@glow.ph --store-url https://glowph.myshopify.com --lang tl --popload installed`. That schedules four emails, in the same brand and in English or Taglish:
+
+| Day | Email | What it does |
+|---|---|---|
+| 0 | Welcome | Three things to do first. If POPLoad is not installed yet, the first item offers to set it up. |
+| 7 | POPLoad check | A 3-step test of order, receipt upload, approve. Skipped if you marked POPLoad "in use". |
+| 30 | Growth tips | Four ways to get first orders, plus a review request. |
+| 60 | Next step | Custom touches, automations, VIPriority (early access) or a 15-minute call. |
+
+These go to merchants who asked for the work, so they send on a schedule without per-email approval, but the same safeguards apply: unsubscribe link and `List-Unsubscribe` headers, bounces and unsubscribes stop the whole sequence, business hours only (Mon-Fri 9-17 PHT), and `FOLLOWUP_DAILY_CAP` (default 20). A step more than 7 days late is skipped rather than sent late, and no two follow-ups go to one client within 3 days. Sending uses the same `EMAIL_SENDING_ENABLED` switch as outreach, so it is a dry run until you turn it on. From the Clients page you can pause or resume a client, skip the next email, mark POPLoad installed or in use, or mark the client done. `python -m leadagent followups` runs whatever is due now.
+
 ## Email outreach with Resend
 
 Qualified leads that have a **publicly listed business email** can get one personalized email. The agent finds addresses on the seller's own website or search snippet (never a personal profile), or you add one with `set-email ID address`.
