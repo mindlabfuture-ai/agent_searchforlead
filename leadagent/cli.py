@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, previews, search, showcase
+from . import config, db, dedupe, emailing, followups, importer, pipeline, popload, previews, search, showcase
 
 
 def load_env():
@@ -122,6 +122,25 @@ def cmd_showcase(a, con):
     print(n, "sent" if config.env("EMAIL_SENDING_ENABLED").lower() == "true" else "(dry run: nothing sent)")
 
 
+def cmd_prospects(a, con):
+    """POPLoad prospects: existing Shopify stores. import FILE | verify | list [--status S] | run [--force]"""
+    if a.sub == "import":
+        results, _ = popload.add_rows(con, popload.parse_csv(open(a.file, encoding="utf-8").read()))
+        print("added", sum(1 for _, s, _ in results if s == "added"), "of", len(results))
+        for label, st, note in results:
+            if st != "added":
+                print(f"  {st}: {label} {note}")
+    elif a.sub == "verify":
+        while popload.verify_all(con):
+            pass
+    elif a.sub == "list":
+        for p in con.execute("SELECT * FROM prospects WHERE (?='' OR status=?) ORDER BY id", (a.status, a.status)):
+            print(f"#{p['id']} {p['status']:11} {p['name'][:30]:30} {p['domain'][:30]:30} {p['pay_level'] or '-':7} {p['email'] or '-'} {p['reject_reason'] or ''}")
+    elif a.sub == "run":
+        n = popload.run(con, force=a.force)
+        print(n, "sent" if config.env("EMAIL_SENDING_ENABLED").lower() == "true" else "(dry run: nothing sent)")
+
+
 def cmd_serve(a, con):
     from . import server
     server.serve()
@@ -179,6 +198,12 @@ def main(argv=None):
     s = sub.add_parser("preview", help="build a store preview for a lead"); s.add_argument("lead_id", type=int); s.set_defaults(f=cmd_preview)
     s = sub.add_parser("showcase", help="send approved showcase emails that are due (dry run unless enabled)")
     s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_showcase)
+    s = sub.add_parser("prospects", help="POPLoad prospects (existing Shopify stores)"); ps = s.add_subparsers(dest="sub", required=True)
+    s = ps.add_parser("import"); s.add_argument("file")
+    ps.add_parser("verify")
+    s = ps.add_parser("list"); s.add_argument("--status", default="")
+    s = ps.add_parser("run"); s.add_argument("--force", action="store_true")
+    s.set_defaults(f=cmd_prospects); ps.choices["import"].set_defaults(f=cmd_prospects); ps.choices["verify"].set_defaults(f=cmd_prospects); ps.choices["list"].set_defaults(f=cmd_prospects)
     sub.add_parser("serve", help="run the dashboard + scheduler (Railway)").set_defaults(f=cmd_serve)
     sub.add_parser("score").set_defaults(f=cmd_score)
     s = sub.add_parser("draft"); s.add_argument("--limit", type=int, default=25); s.set_defaults(f=cmd_draft)

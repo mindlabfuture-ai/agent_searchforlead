@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, previews, previewui, showcase
+from . import config, db, dedupe, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, showcase
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -87,7 +87,7 @@ def render_dashboard(con):
             f"<title>Lead queue</title><style>body{{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}}"
             f"section{{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}}pre{{white-space:pre-wrap}}"
             f".b{{background:{'#fde' if sending else '#ffd'};padding:8px;border-radius:6px}}button{{margin:2px}}</style>"
-            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/prospects'>POPLoad prospects</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
 
 
 def render_clients_page(con, message=""):
@@ -227,6 +227,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_dashboard(con))
         if u.path == "/import" and self._authed():
             return self._send(200, render_import_page())
+        if u.path == "/prospects" and self._authed():
+            show = parse_qs(u.query).get("show", ["verified"])[0]
+            return self._send(200, poploadui.render_page(db.connect(config.DB_PATH), csrf_token(), show=show))
         if u.path == "/clients" and self._authed():
             return self._send(200, render_clients_page(db.connect(config.DB_PATH)))
         m = re.fullmatch(r"/i/([\w.]+)", u.path)
@@ -296,6 +299,19 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=lambda: pipeline.process_new(db.connect(config.DB_PATH), log=print),
                                  daemon=True).start()
             return self._send(200, render_import_page(results, truncated))
+        if u.path == "/prospects" and self._authed():
+            f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+            if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
+                return self._send(403, "bad csrf token", "text/plain")
+            con = db.connect(config.DB_PATH)
+            message, results = "", None
+            if f.get("mode") == "import":
+                results, _ = popload.add_rows(con, popload.parse_csv(f.get("csv", "")))
+                if any(st == "added" for _, st, _ in results):  # checking sites hits the network: off the request thread
+                    threading.Thread(target=lambda: popload.verify_all(db.connect(config.DB_PATH), log=print), daemon=True).start()
+            elif f.get("mode") == "action" and (f.get("id") or "").isdigit():
+                message = popload.apply_action(con, int(f["id"]), f.get("action", ""), f.get("value", ""))
+            return self._send(200, poploadui.render_page(con, csrf_token(), message, results=results, show="all" if results else "verified"))
         if u.path == "/clients" and self._authed():
             f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
             if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
@@ -319,7 +335,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, "bad csrf token", "text/plain")
             con = db.connect(config.DB_PATH)
             return self._preview_page(con, int(m.group(1)), previewui.apply_action(con, int(m.group(1)), f.get("action", "")))
-        if u.path not in ("/action", "/import", "/clients"):
+        if u.path not in ("/action", "/import", "/clients", "/prospects"):
             self._send(404, "Not found", "text/plain")
 
 
@@ -334,12 +350,14 @@ def tick(log=print, stop=None):
         con.execute("INSERT OR REPLACE INTO meta VALUES ('last_pipeline', ?)", (today,))
         con.commit()
         pipeline.run_daily(con, log=log, today=pht.date())
+    popload.verify_all(con, log=lambda *_: None)  # checks any newly imported prospects (at most 60 per pass)
     showcase.prepare(con, log=log)  # builds previews a couple of days early; never approves or sends anything
     if config.env("EMAIL_SENDING_ENABLED").lower() == "true":
         wait = stop.wait if stop else time.sleep
         emailing.run_sender(con, log=log, sleep=wait)
         showcase.run(con, log=log, sleep=wait)
         followups.run(con, log=log, sleep=wait)
+        popload.run(con, log=log, sleep=wait)
 
 
 def scheduler(stop, log=print):
