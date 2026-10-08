@@ -17,6 +17,9 @@ def score_lead(lead):
     if sell:
         score += min(30, 8 * sell); notes.append(f"selling signals x{sell}")
 
+    if str((lead["source"] if "source" in lead.keys() else "") or "").startswith("places:"):
+        score += 25; notes.append("real, operating business on Google Maps")
+
     also = (lead["also_on"] if "also_on" in lead.keys() else "") or ""
     extra = len([x for x in also.split(";") if x.strip()])
     if extra:

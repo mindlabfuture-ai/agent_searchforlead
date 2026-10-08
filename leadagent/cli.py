@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, popload, previews, search, showcase
+from . import config, db, dedupe, emailing, followups, importer, pipeline, places, popload, previews, search, showcase
 
 
 def load_env():
@@ -28,6 +28,16 @@ def cmd_search(a, con):
     dedupe.run(con)
     if ok == 0:
         print(f"{a.platform} returned nothing; try `--platform auto` to fall back.")
+
+
+def cmd_places(a, con):
+    """Find local shops through the Google Places API (needs GOOGLE_PLACES_API_KEY)."""
+    if not config.env("GOOGLE_PLACES_API_KEY"):
+        sys.exit("Set GOOGLE_PLACES_API_KEY first (README: Google Places discovery).")
+    qs = [places.query(a.niche, a.location)] if a.niche and a.location else places.daily_queries(n=a.max_queries)
+    print("added", places.discover(con, queries=qs, max_pages=a.pages))
+    dedupe.run(con)
+    print("run `check` next to look at their websites")
 
 
 def cmd_import(a, con):
@@ -182,6 +192,9 @@ def main(argv=None):
                    help="auto = Facebook first, then fall back to other platforms")
     s.add_argument("--min-new", type=int, default=5, help="auto: keep falling back until this many new leads")
     s.add_argument("--max-queries", type=int, default=10); s.set_defaults(f=cmd_search)
+    s = sub.add_parser("places", help="find local shops through Google Places (official API)")
+    s.add_argument("--niche"); s.add_argument("--location"); s.add_argument("--max-queries", type=int, default=3)
+    s.add_argument("--pages", type=int, default=2); s.set_defaults(f=cmd_places)
     s = sub.add_parser("import"); s.add_argument("file"); s.set_defaults(f=cmd_import)
     s = sub.add_parser("dedupe", help="merge the same business found on several platforms")
     s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dedupe)

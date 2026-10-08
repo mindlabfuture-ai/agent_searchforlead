@@ -2,7 +2,7 @@
 import threading
 from datetime import date
 
-from . import config, db, dedupe, emailing, outreach, scoring, search, shopify_check
+from . import config, db, dedupe, emailing, outreach, places, scoring, search, shopify_check
 
 
 WORK_LOCK = threading.Lock()  # the scheduler and dashboard imports must not run the pipeline at once
@@ -70,6 +70,9 @@ def _run_daily(con, log, today):
         dedupe.run(con, log=log)
     else:
         log("no search key set; skipping discovery")
+    if config.env("GOOGLE_PLACES_API_KEY"):
+        places.discover(con, today=today, log=log)
+        dedupe.run(con, log=log)
     check_all(con, log)
     log(f"{score_all(con)} qualified")
     draft_n(con)

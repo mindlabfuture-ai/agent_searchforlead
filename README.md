@@ -173,6 +173,20 @@ On a lead's preview page, **Publish demo site** builds a small storefront from t
 
 Guardrails, because it shows a real business's name on your domain: a banner on every page says it is a design preview and not a live store; nothing can be bought (Add to cart only shows a notice); sample products are labelled; `noindex`, `robots.txt` and an `X-Robots-Tag` header keep search engines out; no scripts or styles from other sites except Google Fonts; it is deleted after 30 days (extendable), and at once when the lead unsubscribes, bounces, is marked do-not-contact or lost, or the showcase is skipped. Only you publish; the day-7 email links to it only while it is live.
 
+## Google Places discovery (when social search finds too little)
+
+Set `GOOGLE_PLACES_API_KEY` and the daily run also asks Google's official Places API for local shops (`PLACES_DAILY_QUERIES`
+searches a day, default 3, each following up to `PLACES_MAX_PAGES` pages of 20, default 2). Nothing is scraped. A listing
+becomes a lead by what its website field holds:
+
+- a Facebook / Instagram / Shopee / Lazada page: an ordinary lead of that platform, so Facebook pages are found without touching Facebook;
+- the business's own domain: a `web` lead, checked for Shopify and for a public email like any other site;
+- no website: a `maps` lead with its phone number in the notes. Google supplies no email, so these are phone or in-person leads until you add one (`set-email`).
+
+Listings score +25 as real, operating businesses; ones already on Shopify are dropped. Try it by hand with
+`python -m leadagent places --niche candles --location Cebu`. Places bills per request and more for website and phone
+fields, so check the current price on Google's pricing page and set a budget alert in Google Cloud before raising the caps.
+
 ## Rules the agent follows (on purpose)
 
 - **No scraping or logged-in bots on any platform** (Facebook, Instagram, TikTok, Shopee and Lazada all forbid it). Meta's terms forbid it and it gets your Page and personal account banned. Discovery goes through search APIs or your own manual finds.
