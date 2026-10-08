@@ -5,7 +5,7 @@ import html as H
 from datetime import datetime, timezone
 from email import message_from_bytes
 
-from . import config, db, emailing, imaging, previews, showcase
+from . import config, demosite, db, emailing, imaging, previews, showcase
 
 E = lambda v: H.escape(str(v if v is not None else ""), quote=True)
 MAX_FORM_BYTES = 20_000_000
@@ -92,7 +92,7 @@ def render_editor(con, lead_id, tok, message="", now=None):
     msg = f"<p class=b style='background:#eef'>{E(message)}</p>" if message else ""
     can_render = bool(pv) and len(config.env("UNSUB_SECRET")) >= 16 and config.base_url() and lead["email"]
     if can_render:
-        mail = showcase.build_showcase(lead, pv, config.base_url())
+        mail = showcase.build_showcase(lead, pv, config.base_url(), demosite.live_url(con, lead_id) or "")
         preview = (f"<p><b>Subject:</b> {E(mail['subject'])}</p><iframe sandbox style='width:100%;height:1400px;border:1px solid #ccc;border-radius:8px' "
                    f"srcdoc=\"{E(mail['html'])}\"></iframe>")
     elif not pv:
@@ -116,6 +116,20 @@ def render_editor(con, lead_id, tok, message="", now=None):
     actions = ((btn("unapprove", "Withdraw approval") if status == "approved" else btn("approve", "Approve the showcase email")) if pv else "") \
         + btn("skip", "Skip the showcase") + btn("replied", "They replied") + btn("dnc", "Do not contact")
     downloads = (f" <a href='/previews/{lead_id}/theme.json'>theme colours (JSON)</a> &middot; <a href='/previews/{lead_id}/logo.svg'>generated logo (SVG)</a>" if pv else "")
+    demo = demosite.get(con, lead_id)
+    token_set = bool(config.env("NETLIFY_AUTH_TOKEN"))
+    if demo and demo["status"] == "live":
+        demo_html = (f"<p>Live: <a href=\"{E(demo['url'])}\" rel='noopener noreferrer' target=_blank>{E(demo['url'])}</a> &middot; expires {E(demo['expires_at'][:10])}"
+                     f"{' &middot; <span class=no>' + E(demo['note']) + '</span>' if demo['note'] else ''}</p>"
+                     f"<p>{btn('demo_publish', 'Update with the latest preview')}{btn('demo_extend', 'Extend 30 days')}{btn('demo_unpublish', 'Take it down')}</p>"
+                     f"<p><small>The showcase email links to this page while it is live.</small></p>")
+    elif pv:
+        demo_html = ((f"<p>{btn('demo_publish', 'Publish demo site')}</p>" if token_set else "<p class=no>Set NETLIFY_AUTH_TOKEN to publish. You can still download the site below.</p>")
+                     + "<p><small>Publishes a temporary storefront at the business-name address. It is marked as a design preview, hidden from search, "
+                       "deleted after 30 days, and deleted at once if the lead opts out.</small></p>")
+    else:
+        demo_html = "<p>Build a preview first.</p>"
+    demo_dl = f" <a href='/previews/{lead_id}/demo.zip'>demo site (zip)</a>" if pv else ""
     file_in = lambda name, label: (f"<label>{label}</label><input type=file name={name} accept='image/png,image/jpeg,image/gif,image/webp'>"
                                    + (f" <label style=display:inline><input type=checkbox name=rm_{name} value=1> remove the uploaded one</label>" if pv and name in pv.get("uploads", []) else ""))
     style_opts = "".join(f"<option value={k}{' selected' if ov.get('style') == k else ''}>{E(v['label'])}</option>" for k, v in previews.STYLES.items())
@@ -148,7 +162,8 @@ def render_editor(con, lead_id, tok, message="", now=None):
             f"<p><a href='/previews'>&larr; Previews</a> &middot; <a href='/'>Lead queue</a></p><h1>{E(lead['name'] or lead['url'])} <small>#{lead_id}</small></h1>{msg}"
             f"<p><a href=\"{E(lead['url'])}\" rel='noopener noreferrer' target=_blank>{E(lead['url'])}</a>"
             f"{' &middot; website: ' + E(lead['website']) if lead['website'] else ''} &middot; email: {E(lead['email'] or 'none')}</p><p>{E(_timeline(con, lead, now))}</p>"
-            f"{info}{('<p>' + thumbs + '</p>') if thumbs else ''}<section><h3>Your actions</h3><p>{actions}{downloads}</p></section>"
+            f"{info}{('<p>' + thumbs + '</p>') if thumbs else ''}<section><h3>Your actions</h3><p>{actions}{downloads}{demo_dl}</p></section>"
+            f"<section><h3>Demo site</h3>{demo_html}</section>"
             f"<section><h3>The showcase email, exactly as it will be sent</h3>{preview}</section><section><h3>Add what you have</h3>{form}</section>")
 
 
@@ -195,8 +210,8 @@ def save_from_form(con, lead_id, fields, files, fetch_html=None, fetch_image=Non
     return "Saved and rebuilt the preview." + (" Problems: " + "; ".join(problems) if problems else "")
 
 
-def apply_action(con, lead_id, action):
-    """approve | unapprove | skip | replied | dnc. Returns a message."""
+def apply_action(con, lead_id, action, netlify_client=None):
+    """approve | unapprove | skip | replied | dnc | demo_publish | demo_unpublish | demo_extend. Returns a message."""
     lead = _lead(con, lead_id)
     if not lead:
         return "Unknown lead."
@@ -223,6 +238,14 @@ def apply_action(con, lead_id, action):
         if lead["email"]:
             emailing.suppress(con, lead["email"], "marked in the previews page")
         msg = "Marked do not contact."
+        if demosite.get(con, lead_id):
+            msg += " " + demosite.unpublish(con, lead_id, netlify_client, "lead opted out")[1]
+    elif action == "demo_publish":
+        msg = demosite.publish(con, lead_id, netlify_client)[1]
+    elif action == "demo_unpublish":
+        msg = demosite.unpublish(con, lead_id, netlify_client)[1]
+    elif action == "demo_extend":
+        msg = demosite.extend(con, lead_id)
     else:
         msg = "Nothing changed."
     con.commit()

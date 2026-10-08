@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS preview_images (  -- the logo and up to 3 product pho
   content_type TEXT, data BLOB, source_url TEXT,
   PRIMARY KEY (lead_id, slot)
 );
+CREATE TABLE IF NOT EXISTS demo_sites (  -- temporary Netlify storefront for a lead's preview
+  lead_id INTEGER PRIMARY KEY, slug TEXT NOT NULL, site_id TEXT, dns_zone_id TEXT, dns_record_id TEXT, url TEXT,
+  status TEXT DEFAULT 'live',  -- live | deleted
+  note TEXT, deployed_at TEXT, expires_at TEXT
+);
 CREATE TABLE IF NOT EXISTS clients (  -- merchants whose store we built and handed over
   id INTEGER PRIMARY KEY, lead_id INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, store_url TEXT,
   handed_over_at TEXT,                         -- YYYY-MM-DD (Philippine date)
