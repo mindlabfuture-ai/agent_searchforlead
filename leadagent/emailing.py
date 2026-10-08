@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, outreach
+from . import config, db, emailtemplate, outreach
 
 PHT = timezone(timedelta(hours=8))
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
@@ -108,27 +108,38 @@ EXTRA_TL = " Kapag may sariling store, walang marketplace fees at sa inyo po ang
 
 
 def build_email(lead, base_url, now=None):
-    name = lead["name"] or "your shop"
+    # The name comes from the web: flatten whitespace so it can't break paragraphs or the subject line.
+    name = " ".join((lead["name"] or "your shop").split())[:60] or "your shop"
     company = config.env("SENDER_COMPANY", "MindLab Future AI")
     sender = config.env("SENDER_NAME", "Mark")
     address = config.env("SENDER_ADDRESS", "Corporate Tower 2, BGC, Taguig City, Philippines")
     tl = outreach.is_taglish(lead)
     where = f"your {db.LABELS.get(lead['platform'], 'page')} ({lead['url']})"
-    extra = (EXTRA_TL if tl else EXTRA_EN) if lead["platform"] in db.MARKETPLACES else ""
+    marketplace = lead["platform"] in db.MARKETPLACES
+    extra = (EXTRA_TL if tl else EXTRA_EN) if marketplace else ""
     body = (TL if tl else EN).format(name=name, where=where, sender=sender, company=company, extra=extra)
     unsub = f"{base_url}/unsubscribe?t={unsub_token(lead['email'])}"
     source = lead["email_source"] or "your public listing"
     footer = (f"\n\n--\nYou're getting this one-time message because this business address is publicly listed "
               f"at {source}.\n{company}, {address}\nNot interested? Unsubscribe: {unsub} (or just reply STOP).")
     text = body + footer
-    paras = "".join(f"<p>{htmllib.escape(p).replace(chr(10), '<br>')}</p>" for p in body.split("\n\n"))
-    html = (f"<div style='font-family:sans-serif;font-size:15px;line-height:1.5'>{paras}"
-            f"<p style='color:#666;font-size:12px'>You're getting this one-time message because this business "
-            f"address is publicly listed at {htmllib.escape(source)}.<br>{htmllib.escape(company)}, "
-            f"{htmllib.escape(address)}<br><a href='{unsub}'>Unsubscribe</a> or just reply STOP.</p></div>")
     reply = config.env("SENDER_EMAIL", "support@mindlabfuture-ai.com")
+    subject = f"A simple online store for {name}"
+    # Paragraphs of the template: greeting, found-you, pitch, ask, reply line, signature.
+    greeting, found, pitch, ask, reply_line, signature = body.split("\n\n")
+    callout = ""
+    if marketplace:  # show the marketplace point as its own callout rather than burying it in the pitch
+        pitch, callout = pitch.replace(extra, ""), extra.strip()
+    html = emailtemplate.render_html(
+        subject=subject, greeting=greeting, found=found, pitch=pitch, ask=ask, reply=reply_line,
+        signature=signature.split("\n"), callout=callout,
+        preheader=f"A free preview of a basic Shopify store for {name}. You'd own the store and the account.",
+        cta_label="Gusto ko ng libreng preview" if tl else "Get my free store preview",
+        cta_mailto=emailtemplate.cta_mailto(reply, name, tl),
+        unsub_url=unsub, source=source, company=company, address=address,
+        logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL))
     return {
-        "subject": f"A simple online store for {name}",
+        "subject": subject,
         "text": text, "html": html,
         "headers": {"List-Unsubscribe": f"<{unsub}>, <mailto:{reply}?subject=unsubscribe>",
                     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"},

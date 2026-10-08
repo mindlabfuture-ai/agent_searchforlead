@@ -40,6 +40,33 @@ class EmailTests(unittest.TestCase):
         self.assertEqual(m["headers"]["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
         self.assertIn("List-Unsubscribe", m["headers"])
 
+    def test_html_is_branded_safe_and_matches_text(self):
+        con = mem(); l = lead(con, "glowph", name='Glow <img src=x onerror=alert(1)>\n\nPH & "Co"')
+        con.execute("UPDATE leads SET url='https://facebook.com/glowph'"); l = con.execute("SELECT * FROM leads").fetchone()
+        m = emailing.build_email(l, config.base_url()); h = m["html"]
+        for brand in ("#060A12", "#0E1727", "#E3B965", "Space Grotesk", "https://mindlabfuture-ai.com/img/logo-ml.png", 'alt="MindLab Future AI"'):
+            self.assertIn(brand, h)
+        self.assertNotIn("<img src=x", h); self.assertNotIn("onerror=alert(1)>", h)
+        self.assertEqual(h.count("<img"), 1)                              # only the logo: no tracking pixels
+        self.assertNotIn("<script", h)
+        self.assertIn("/unsubscribe?t=", h); self.assertIn("mailto:support@mindlabfuture-ai.com?subject=Free%20store%20preview", h)
+        self.assertEqual(m["subject"].count("\n"), 0); self.assertLessEqual(len(m["subject"]), 100)
+        self.assertIn("Unsubscribe", h); self.assertIn("Taguig", h)
+        self.assertGreater(len(m["text"]), 200)                           # plain-text part is still there
+
+    def test_marketplace_and_taglish_variants_render(self):
+        con = mem(); l = lead(con, "kapeng", name="Kapeng Bukid")
+        con.execute("UPDATE leads SET platform='shopee', url='https://shopee.ph/kapeng', snippet='available po, mga kape po'")
+        m = emailing.build_email(con.execute("SELECT * FROM leads").fetchone(), config.base_url())
+        self.assertIn("Gusto ko ng libreng preview", m["html"]); self.assertIn("marketplace fees", m["html"])
+        self.assertIn("border-left:3px solid", m["html"])                  # shown as a callout, not buried in the pitch
+        self.assertEqual(m["html"].count("marketplace fees"), 1)
+
+    def test_logo_url_can_be_overridden(self):
+        con = mem(); l = lead(con, "glowph")
+        with mock.patch.dict(os.environ, {"LOGO_URL": "https://cdn.example.ph/logo.png"}):
+            self.assertIn("https://cdn.example.ph/logo.png", emailing.build_email(l, config.base_url())["html"])
+
     def test_dry_run_sends_nothing_and_keeps_status(self):
         con = mem(); l = lead(con, "glowph"); calls = []
         r = emailing.send_one(con, l, post=lambda p, k: calls.append(p), enabled=False, log=lambda *_: None)

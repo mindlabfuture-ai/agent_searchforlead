@@ -74,6 +74,8 @@ Qualified leads that have a **publicly listed business email** can get one perso
 daily job -> drafts -> you click "Approve email" in the dashboard -> sender emails it (Mon-Fri 9-17 PHT, capped)
 ```
 
+The email is branded to match mindlabfuture-ai.com (dark navy card, brass accents, Space Grotesk headings, logo from `mindlabfuture-ai.com/img/logo-ml.png`; override with `LOGO_URL`). It is built from tables with inline styles so it holds up in Gmail, Outlook and Apple Mail, stacks cleanly on phones, and always ships with a plain-text version. It has no tracking pixels or tracked links: the only image is the logo and the button is a plain `mailto:`. The design lives in `leadagent/emailtemplate.py`.
+
 Guardrails, all enforced in code:
 - **Human approval per lead.** Nothing sends unless you approved that lead.
 - **Dry run by default.** Set `EMAIL_SENDING_ENABLED=true` only after domain setup. `python -m leadagent send` previews until then.
