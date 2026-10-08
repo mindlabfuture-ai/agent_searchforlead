@@ -77,19 +77,19 @@ def suppress(con, email, reason):
 
 
 # ---------- message ----------
-# One Taglish version for everyone: the audience is Filipino sellers, and a single version means a single
-# email to review, test and keep honest.
-TEMPLATE = """Hi po {name} team,
+# One English version for everyone. Taglish read as awkward to native Tagalog speakers, and a single version
+# means a single email to review, test and keep honest.
+TEMPLATE = """{greeting}
 
-Nakita ko po {where} at nagustuhan ko ang products ninyo.
+I found {where} and liked what you're selling.
 
-Ako po si {sender} ng {company}, Shopify Partner sa Taguig. Tumutulong po kami mag-set up ng simpleng online store para sa Filipino sellers: product pages, GCash/Maya/bank transfer checkout at shipping, para hindi na po kailangan ng back-and-forth sa DM.{extra}
+I'm {sender} from {company}, a Shopify Partner in Taguig. We set up simple online stores for Filipino sellers: product pages, GCash/Maya/bank transfer checkout and shipping, so customers can order without messaging back and forth.{extra}
 
 {offer}
 
-Gusto po ba ninyong makita ang libreng preview ng basic store para sa {name}? Sa inyo po ang store at account.
+Would you like a free preview of what a basic store for {shop} could look like? You would own the store and the account.
 
-Reply lang po kayo sa email na ito at ipapadala ko.
+Just reply to this email and I'll send it over.
 
 {sender}
 {company}"""
@@ -100,33 +100,35 @@ Reply lang po kayo sa email na ito at ipapadala ko.
 # The store is built as a Shopify "client transfer store" and handed over, which is how Shopify attributes the
 # referral. Shopify says transferred stores are NOT eligible for promotions or free trials, so there is
 # deliberately no "$1/month" claim here.
-OFFER = """Ito po ang offer:
-- Libreng store build: ako po ang magdidisenyo at mag-se-set up ng store ninyo, tapos ibibigay ko po ito sa inyo kaya kayo ang may-ari ng store at account.
-- Maagang access sa POPLoad: ang payment-receipt app ko (nasa review pa ng Shopify) para makapagbayad ang customers via GCash, Maya o bank transfer at mag-upload ng resibo, at i-a-approve ninyo sa isang click. Basic plan, hanggang 50 uploads.
-- Shopify plan ninyo: kayo po ang pipili at magbabayad ng plan nang direkta sa Shopify kapag kayo na ang may hawak ng store. Irerekomenda ko po ang pinakaangkop, walang pilitan.
-Note: hindi po kasama ang sariling domain name (hal. yourshop.com). Pwede kayong bumili o gamitin ang meron na kayo. Kung ayaw po muna, libre ko pong i-set up ang store sa subdomain tulad ng yourshop.mindlabfuture-ai.com, at pwede kayong lumipat sa sariling domain anumang oras.
-Note: bilang Shopify Partner, maaari po akong makatanggap ng referral fee mula sa Shopify kapag nag-subscribe kayo. Wala po itong dagdag na bayad sa inyo."""
+OFFER = """Here's the offer:
+- Free store build: I design and set up your store, then hand it over so you own the store and the account.
+- Early access to POPLoad: my payment-receipt app (now in Shopify's review) so customers can pay by GCash, Maya or bank transfer and upload their receipt, and you approve it in one click. Basic plan, up to 50 uploads.
+- Your Shopify plan: you choose and pay for your plan directly when you take over the store. I'll recommend the one that fits, no upsell.
+Note: your own domain name (like yourshop.com) isn't included. You can buy one or connect one you already own. If you'd rather not, I can set your store up for free on a subdomain such as yourshop.mindlabfuture-ai.com, and you can switch to your own domain anytime.
+Note: as a Shopify Partner I may earn a referral fee from Shopify when you subscribe. It costs you nothing extra."""
 
-EXTRA = " Kapag may sariling store, walang marketplace fees at sa inyo po ang customer details."
+EXTRA = " A store of your own also means no marketplace fees, and your customers' details are yours."
 
 
 def build_email(lead, base_url, now=None):
     # The name comes from the web: flatten whitespace so it can't break paragraphs or the subject line.
-    name = " ".join((lead["name"] or "").split())[:60] or "Shop Owner"
+    name = " ".join((lead["name"] or "").split())[:60]
+    shop = name or "your shop"
+    greeting = f"Hi {name} team," if name else "Hi there,"
     company = config.env("SENDER_COMPANY", "MindLab Future AI")
     sender = config.env("SENDER_NAME", "Mark")
     address = config.env("SENDER_ADDRESS", "Corporate Tower 2, BGC, Taguig City, Philippines")
-    where = f"ang {db.LABELS.get(lead['platform'], 'page')} ninyo ({lead['url']})"
+    where = f"your {db.LABELS.get(lead['platform'], 'page')} ({lead['url']})"
     marketplace = lead["platform"] in db.MARKETPLACES
     extra = EXTRA if marketplace else ""
-    body = TEMPLATE.format(name=name, where=where, sender=sender, company=company, extra=extra, offer=OFFER)
+    body = TEMPLATE.format(greeting=greeting, shop=shop, where=where, sender=sender, company=company, extra=extra, offer=OFFER)
     unsub = f"{base_url}/unsubscribe?t={unsub_token(lead['email'])}"
-    source = lead["email_source"] or "public listing ninyo"
-    why = f"Natanggap ninyo ang one-time na mensaheng ito dahil naka-list sa publiko ang business address na ito sa {source}."
-    footer = f"\n\n--\n{why}\n{company}, {address}\nAyaw na po bang makatanggap? Unsubscribe: {unsub} (o mag-reply lang ng STOP)."
+    source = lead["email_source"] or "your public listing"
+    why = f"You're getting this one-time message because this business address is publicly listed at {source}."
+    footer = f"\n\n--\n{why}\n{company}, {address}\nNot interested? Unsubscribe: {unsub} (or just reply STOP)."
     text = body + footer
     reply = config.env("SENDER_EMAIL", "support@mindlabfuture-ai.com")
-    subject = f"Simpleng online store para sa {name}"
+    subject = f"A simple online store for {shop}"
     # Paragraphs of the template: greeting, found-you, pitch, offer, ask, reply line, signature.
     greeting, found, pitch, offer_block, ask, reply_line, signature = body.split("\n\n")
     offer_title, *offer_lines = offer_block.split("\n")
@@ -138,8 +140,8 @@ def build_email(lead, base_url, now=None):
     html = emailtemplate.render_html(
         subject=subject, greeting=greeting, found=found, pitch=pitch, ask=ask, reply=reply_line,
         signature=signature.split("\n"), callout=callout, offer_title=offer_title, offer_items=offer_items, offer_notes=offer_notes,
-        preheader="Libreng Shopify store build para sa GCash at Maya, kasama ang maagang access sa POPLoad.",
-        cta_label="Gusto ko ng libreng preview", cta_mailto=emailtemplate.cta_mailto(reply, name),
+        preheader="A free Shopify store build set up for GCash and Maya, plus early access to POPLoad.",
+        cta_label="Get my free store preview", cta_mailto=emailtemplate.cta_mailto(reply, shop),
         unsub_url=unsub, why=why, company=company, address=address,
         logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL))
     return {

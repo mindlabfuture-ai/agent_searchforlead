@@ -16,7 +16,7 @@ SITE_URL = "https://mindlabfuture-ai.com"
 
 E = lambda v: H.escape(str(v), quote=True)
 
-CHIPS = ("Product pages", "GCash, Maya at bank checkout", "Shipping set up")
+CHIPS = ("Product pages", "GCash, Maya &amp; bank checkout", "Shipping set up")
 
 
 def _p(text, color=TEXT, size=16, extra=""):
@@ -75,7 +75,7 @@ def _page(subject, preheader, main, signature, why, company, address, unsub_url,
     """The shared frame: header with logo, brass bar, card, signature, footer with unsubscribe."""
     sign = "<br>".join(E(line) for line in signature)
     return f"""<!doctype html>
-<html lang="tl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark light"><meta name="supported-color-schemes" content="dark light">
 <title>{E(subject)}</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -108,7 +108,7 @@ def _page(subject, preheader, main, signature, why, company, address, unsub_url,
 {why}<br>
 {E(company)} &middot; {E(address)}<br>
 <a href="{E(site_url)}" style="color:{BRASS_HI};text-decoration:underline">mindlabfuture-ai.com</a> &nbsp;&middot;&nbsp;
-<a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> o mag-reply lang ng STOP.
+<a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> or just reply STOP.
 </td></tr>
 
 </table></td></tr></table></body></html>"""
@@ -124,5 +124,5 @@ def render_followup(*, subject, preheader, greeting, intro, list_title, items, c
 
 
 def cta_mailto(reply_to, name):
-    subject = "Libreng store preview para sa " + name
+    subject = "Free store preview for " + name
     return f"mailto:{reply_to}?subject={quote(subject)}"

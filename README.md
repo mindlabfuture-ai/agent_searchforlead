@@ -11,7 +11,7 @@ search / import  ->  check  ->  score  ->  draft  ->  export CSV  ->  you review
 1. **Discover**: Facebook first. If Facebook is blocked, returns nothing, or yields fewer than `--min-new` (default 5) new leads, `--platform auto` (the default) falls back through **Instagram -> TikTok -> Shopee -> Lazada -> Carousell**. Pick one with `--platform instagram` etc. Details: Google-style search (`site:facebook.com` + niche + PH location, via Serper or Brave) or `import` a CSV of pages you found by hand. Optional Meta Graph Pages Search stub in `search.py`.
 2. **Check**: opens the seller's *own* linked website and looks for Shopify markers (`cdn.shopify.com`, `myshopify.com`, headers). No link = Facebook-only. Shopee/Lazada-only is flagged separately.
 3. **Score** (0-100): PH signals (₱, GCash, COD, city names), Taglish, selling language, plus no store. Existing Shopify stores score 0. 50+ becomes `qualified`.
-4. **Draft**: a Taglish message to send by hand (English if the page is clearly English), with a STOP opt-out line. The *emails* are Taglish only, see below.
+4. **Draft**: a message to send by hand (English, or Taglish if the page is written that way), with a STOP opt-out line. The *emails* are English only, see below.
 ### Duplicates across platforms
 The same business often shows up on Facebook, Instagram and Shopee. `dedupe` merges them into one lead, so you only get one draft and never message a business twice. It runs automatically after `search` and `import`.
 
@@ -68,7 +68,7 @@ Open **Import leads** on the dashboard (`/import`) to add one lead (URL, name, n
 
 ## Follow-ups after you hand over a store
 
-When a merchant accepts their transferred store, add them under **Clients** in the dashboard (`/clients`), or with `python -m leadagent client add "Glow PH" owner@glow.ph --store-url https://glowph.myshopify.com --popload installed`. That schedules four emails in the same brand, written in Taglish:
+When a merchant accepts their transferred store, add them under **Clients** in the dashboard (`/clients`), or with `python -m leadagent client add "Glow PH" owner@glow.ph --store-url https://glowph.myshopify.com --popload installed`. That schedules four emails in the same brand, written in English:
 
 | Day | Email | What it does |
 |---|---|---|
@@ -81,7 +81,7 @@ These go to merchants who asked for the work, so they send on a schedule without
 
 ## Email outreach with Resend
 
-Every email (outreach and follow-ups) is **one Taglish version**: there is no English variant to maintain, review or test. The copy lives in `OFFER`, `TEMPLATE` and `EXTRA` in `leadagent/emailing.py` and in `COPY` in `leadagent/followups.py`.
+Every email (outreach and follow-ups) is **one English version**: native Tagalog speakers find Taglish email awkward, and a single version is one thing to review, test and keep honest. The copy lives in `OFFER`, `TEMPLATE` and `EXTRA` in `leadagent/emailing.py` and in `COPY` in `leadagent/followups.py`.
 
 Qualified leads that have a **publicly listed business email** can get one personalized email. The agent finds addresses on the seller's own website or search snippet (never a personal profile), or you add one with `set-email ID address`.
 

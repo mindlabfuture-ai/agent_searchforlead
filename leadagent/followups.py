@@ -16,55 +16,55 @@ MAX_LATE_DAYS = 7   # a step this overdue is skipped, not sent late (e.g. after 
 MAX_ATTEMPTS = 3
 POPLOAD_STATUSES = ("not_installed", "installed", "active")
 
-# ---- copy (Taglish only): one version per step. Items written "Label: text" get a bold lead-in in the HTML. ----
+# ---- copy (English only): one version per step. Items written "Label: text" get a bold lead-in in the HTML. ----
 COPY = {
-    "greeting": "Hi po {name} team,",
-    "plain_cta": "Mag-reply lang po sa email na ito.",
+    "greeting": "Hi {name} team,",
+    "plain_cta": "Just reply to this email.",
     "welcome": dict(
-        subject="Sa inyo na po ang store ninyo: 3 gagawin muna",
-        preheader="Congrats po sa bagong Shopify store ninyo. Ito ang mga gagawin sa unang linggo.",
-        intro="Congrats po! Sa inyo na ang Shopify store ninyo{store}. Ito po ang mga gawin para masulit ang unang linggo.",
-        list_title="Gawin muna ito",
-        items=["Ilagay ang payment details: ilagay po ang GCash, Maya o bank account ninyo sa POPLoad para alam ng customers kung saan magbabayad.",
-               "Subukan po ninyo: mag-test order, bayaran, mag-upload ng resibo at i-approve, para makita ang buong proseso.",
-               "I-share ang link: i-pin ang store sa Facebook page ninyo at ilagay sa Instagram bio."],
-        items_no_popload=["I-on ang POPLoad: hindi pa po ito active sa store ninyo. Mag-reply lang ng POPLOAD at sabay nating i-set up.",
-                          "Ihanda ang payment details: ihanda po ang GCash, Maya o bank account ninyo para sa setup.",
-                          "I-share ang link: i-pin ang store sa Facebook page ninyo at ilagay sa Instagram bio."],
-        closing="Kung may mali o hindi malinaw, mag-reply lang po sa email na ito. Binabasa ko po ang bawat reply.",
-        cta="Mag-reply ng tanong", cta_subject="Tanong tungkol sa store ko"),
+        subject="Your store is yours: 3 things to do first",
+        preheader="Congratulations on your new Shopify store. Here's what to do in the first week.",
+        intro="Congratulations, your Shopify store is now yours{store}. Here is how to get the most out of the first week.",
+        list_title="Do these first",
+        items=["Add your payment details: put your GCash, Maya or bank account details in POPLoad so customers know where to pay.",
+               "Try it yourself: place a test order, pay it, upload the receipt and approve it, so you have seen the whole flow.",
+               "Share your link: pin the store on your Facebook page and put it in your Instagram bio."],
+        items_no_popload=["Switch on POPLoad: it isn't active on your store yet. Reply POPLOAD and we'll set it up together.",
+                          "Get your payment details ready: have your GCash, Maya or bank account details at hand for the setup.",
+                          "Share your link: pin the store on your Facebook page and put it in your Instagram bio."],
+        closing="If anything looks off, just reply to this email. I read every reply.",
+        cta="Reply with a question", cta_subject="Question about my store"),
     "popload_check": dict(
-        subject="Gumagana na po ba ang POPLoad para sa customers ninyo?",
-        preheader="3-step na check kung gumagana ang bayad at resibo.",
-        intro="Isang linggo na po mula nang mag-live ang store ninyo. Ito ang 3-step na check kung gumagana ang bayaran mula simula hanggang dulo:",
-        list_title="I-check kung gumagana",
-        items=["Order: buksan ang store sa phone, mag-add ng product at piliin ang bank transfer, GCash o Maya.",
-               "Resibo: mag-upload ng resibo sa thank-you page.",
-               "Approve: buksan ang POPLoad sa Shopify admin at i-approve. Dapat mamarkahang bayad na ang order."],
-        closing="Kung may hindi gumana, mag-reply po kayo ng screenshot at aayusin ko. At kapag may unang totoong order na, gusto ko pong marinig.",
-        cta="Sabihin kung kumusta", cta_subject="POPLoad check"),
+        subject="Is POPLoad working for your customers?",
+        preheader="A quick 3-step check that payments and receipts work.",
+        intro="It has been a week since your store went live. Here is a 3-step check that payments work from start to finish:",
+        list_title="Check it works",
+        items=["Order: open your store on your phone, add a product and choose bank transfer, GCash or Maya.",
+               "Receipt: upload a receipt on the thank-you page.",
+               "Approve: open POPLoad in your Shopify admin and approve it. The order should be marked as paid."],
+        closing="If a step fails, reply with a screenshot and I'll fix it. And when your first real order comes in, I'd love to hear about it.",
+        cta="Tell me how it went", cta_subject="POPLoad check"),
     "growth": dict(
-        subject="30 araw na po: 4 na paraan para dumami ang orders",
-        preheader="Mga simpleng paraan para magkaroon ng unang orders ang bagong store.",
-        intro="Isang buwan na po ang store ninyo. Ito ang apat na bagay na nagdadala ng orders sa karamihan ng bagong store:",
-        list_title="Subukan ito",
-        items=["Totoong products: hindi bababa sa 10 products na may malinaw na photo, presyo at maikling description.",
-               "Link kahit saan: Facebook page button, pinned post, Instagram bio, at sa bawat \"paano mag-order?\".",
-               "Unang reviews: hilingin sa tatlong best customers ninyo na mag-order sa store at mag-iwan ng feedback.",
-               "Gawing madali ang bayad: sabihin sa posts, \"bayad via GCash, mag-upload ng resibo, tapos na\"."],
-        closing="Pwede po ba kayong mag-reply ng isang linya tungkol sa pagtatrabaho natin? Nakakatulong po ito para mahanap kami ng ibang maliliit na seller.",
-        cta="Magpadala ng review", cta_subject="Review ko"),
+        subject="30 days in: 4 ways to get more orders",
+        preheader="Simple things that bring first orders to a new store.",
+        intro="Your store is a month old. These four things bring orders to most new stores:",
+        list_title="Try these",
+        items=["Real products: have at least 10 products with clear photos, prices and a short description.",
+               "Your link everywhere: Facebook page button, pinned post, Instagram bio, and every \"how to order?\" reply.",
+               "First reviews: ask your three best customers to order through the store and leave feedback.",
+               "Make paying easy: say it in your posts, \"pay by GCash, upload your receipt, done\"."],
+        closing="Would you reply with one line about working with me? It helps other small sellers find us.",
+        cta="Send a quick review", cta_subject="My review"),
     "next_level": dict(
-        subject="Handa na po ba kayo sa susunod na hakbang?",
-        preheader="Ilang paraan para tumulong sa paglago ng store ninyo. Walang pressure.",
-        intro="Dalawang buwan na po ang store ninyo. Kung steady na ang sales, ito ang mga pwede kong itulong. Mag-reply lang ng numero, walang pressure.",
-        list_title="Mga option",
-        items=["Custom touches: banners, collections at mas magandang product page layout.",
-               "Automations: order updates at follow-up messages sa repeat customers via email o SMS.",
-               "VIPriority: para sa mas mahal na items tulad ng relo, alahas at bag. VIP customer ranking, reservation fees at QR authenticity certificates. Bukas ang early access.",
-               "15-minutong call: titingnan natin ang numbers ninyo at magplano ng susunod na 60 araw."],
-        closing="Hindi pa po ngayon? Okay lang po. Sa inyo pa rin ang store ninyo.",
-        cta="Mag-reply ng numero", cta_subject="Susunod na hakbang"),
+        subject="Ready for the next step with your store?",
+        preheader="A few ways I can help you grow from here. No pressure.",
+        intro="You are two months in. If sales are steady, here are a few ways I can help next. Reply with a number, no pressure.",
+        list_title="Options",
+        items=["Custom touches: banners, collections and a better product page layout.",
+               "Automations: order updates and follow-up messages to repeat customers by email or SMS.",
+               "VIPriority: for higher-value items like watches, jewelry and bags. VIP customer ranking, reservation fees and QR authenticity certificates. Early access is open.",
+               "A 15-minute call: we look at your numbers and plan the next 60 days."],
+        closing="Not now? That's fine too. Your store is yours either way.",
+        cta="Reply with a number", cta_subject="Next step for my store"),
 }
 
 
@@ -142,7 +142,7 @@ def apply_action(con, client_id, action, today=None):
 # ---------- the message ----------
 def build_followup(client, step, base_url):
     c, g = COPY[step], COPY
-    name = " ".join((client["name"] or "").split())[:60] or "Shop Owner"
+    name = " ".join((client["name"] or "").split())[:60]
     store = f" ({client['store_url']})" if client["store_url"] else ""
     items = c["items"]
     if step == "welcome" and client["popload_status"] == "not_installed":
@@ -152,11 +152,11 @@ def build_followup(client, step, base_url):
     address = config.env("SENDER_ADDRESS", "Corporate Tower 2, BGC, Taguig City, Philippines")
     reply = config.env("SENDER_EMAIL", "support@mindlabfuture-ai.com")
     unsub = f"{base_url}/unsubscribe?t={emailing.unsub_token(client['email'])}"
-    why = "Natanggap ninyo ito dahil ang MindLab Future AI ang gumawa ng Shopify store ninyo."
-    greeting, intro = g["greeting"].format(name=name), c["intro"].format(store=store)
+    why = "You're getting this because MindLab Future AI built your Shopify store."
+    greeting, intro = (g["greeting"].format(name=name) if name else "Hi there,"), c["intro"].format(store=store)
     numbered = "\n".join(f"{n}. {i}" for n, i in enumerate(items, 1))
     text = (f"{greeting}\n\n{intro}\n\n{c['list_title']}:\n{numbered}\n\n{c['closing']}\n{g['plain_cta']}\n\n{sender}\n{company}"
-            f"\n\n--\n{why}\n{company}, {address}\nAyaw na po bang makatanggap? Unsubscribe: {unsub} (o mag-reply lang ng STOP).")
+            f"\n\n--\n{why}\n{company}, {address}\nNot interested? Unsubscribe: {unsub} (or just reply STOP).")
     html = emailtemplate.render_followup(
         subject=c["subject"], preheader=c["preheader"], greeting=greeting, intro=intro, list_title=c["list_title"],
         items=items, closing=c["closing"], cta_label=c["cta"],
