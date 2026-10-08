@@ -388,6 +388,23 @@ def pain_class(score):
     return "Hot" if score >= HOT else "Warm" if score >= WARM else "Potential" if score >= POTENTIAL else "Low"
 
 
+DETECTOR_VERSION = "3"  # bump when what verification reads from a site changes, so earlier results are not trusted
+
+
+def recheck_if_stale(con):
+    """After the detector changes, send prospects that are not in the sequence back for checking once, so an
+    old, wrong reading never reaches an email. Your own decisions stay: rejections you made, emails you typed
+    in, and anyone already approved or answered. Returns how many were queued."""
+    row = con.execute("SELECT value FROM meta WHERE key='popload_detector'").fetchone()
+    if row and row[0] == DETECTOR_VERSION:
+        return 0
+    n = con.execute("UPDATE prospects SET status='new' WHERE status IN ('verified','needs_email','rejected') "
+                    "AND COALESCE(reject_reason,'')!='rejected by you' AND COALESCE(email_source,'')!='added manually'").rowcount
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('popload_detector', ?)", (DETECTOR_VERSION,))
+    con.commit()
+    return n
+
+
 def verify_all(con, fetch=shopify_check.fetch, limit=60, workers=8, log=print):
     rows = con.execute("SELECT * FROM prospects WHERE status='new' ORDER BY id LIMIT ?", (limit,)).fetchall()
     with ThreadPoolExecutor(workers) as ex:
