@@ -12,6 +12,22 @@ search / import  ->  check  ->  score  ->  draft  ->  export CSV  ->  you review
 2. **Check**: opens the seller's *own* linked website and looks for Shopify markers (`cdn.shopify.com`, `myshopify.com`, headers). No link = Facebook-only. Shopee/Lazada-only is flagged separately.
 3. **Score** (0-100): PH signals (₱, GCash, COD, city names), Taglish, selling language, plus no store. Existing Shopify stores score 0. 50+ becomes `qualified`.
 4. **Draft**: English or Taglish message, with a STOP opt-out line.
+### Duplicates across platforms
+The same business often shows up on Facebook, Instagram and Shopee. `dedupe` merges them into one lead, so you only get one draft and never message a business twice. It runs automatically after `search` and `import`.
+
+| Evidence | Action |
+|---|---|
+| Same website host, or the same handle on different platforms (`glowph` / `glow.ph` / `glow_ph`) | **Merged automatically** |
+| Same business name only (e.g. two "Kapeng Bukid" pages) | **Listed for review**; merge with `python -m leadagent merge ID ID` |
+
+What a merge does:
+- Keeps the most advanced profile as the main lead (contacted beats new) and marks the others `merged`. They stay in the database, so re-discovering them won't create a duplicate.
+- Combines snippets and websites, lists the other profiles in `also_on`, and adds a small score bonus for being on several platforms.
+- If any profile is on Shopify, the whole business is skipped. If any profile opted out, they all are.
+- When a merge brings in a new website, the store status resets to `unchecked`. Run `check` and `score` again afterwards.
+
+`python -m leadagent dedupe --dry-run` previews without changing anything. Name-only matches are never merged automatically, because generic names ("Online Shop") would join unrelated sellers.
+
 ### Qualifying alternatives
 | Source | Why it qualifies | Store check |
 |---|---|---|
@@ -48,6 +64,5 @@ Stdlib only, Python 3.10+. Data lives in `data/leads.db` (SQLite, git-ignored).
 
 ## Next steps
 
-- Merge the same business found on several platforms into one lead.
 - Push `won` leads into your CRM (GoHighLevel) and track the POPLoad follow-up (`outreach.popload_followup`).
 - Daily scheduled run that emails you the top 10 new drafts.

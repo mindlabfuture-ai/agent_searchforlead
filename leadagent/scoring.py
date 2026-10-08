@@ -17,6 +17,10 @@ def score_lead(lead):
     if sell:
         score += min(30, 8 * sell); notes.append(f"selling signals x{sell}")
 
+    also = (lead["also_on"] if "also_on" in lead.keys() else "") or ""
+    extra = len([x for x in also.split(";") if x.strip()])
+    if extra:
+        score += min(10, 5 * extra); notes.append(f"also on {extra} other platform(s)")
     plat = lead["platform"] if "platform" in lead.keys() else "facebook"
     status = lead["shopify_status"]
     if status == "has_shopify":

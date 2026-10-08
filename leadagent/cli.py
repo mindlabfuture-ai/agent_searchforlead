@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, outreach, scoring, search, shopify_check
+from . import config, db, dedupe, outreach, scoring, search, shopify_check
 
 
 def load_env():
@@ -18,12 +18,14 @@ def cmd_search(a, con):
     fn = search.provider()
     if a.platform == "auto":
         print("added", search.run_auto(con, fn, a.niche, a.location, a.max_queries, a.min_new))
+        dedupe.run(con)
         return
     qs = list(search.build_queries(a.platform, [a.niche] if a.niche else None,
                                    [a.location] if a.location else None))
     print(f"{len(qs)} queries ({a.max_queries} will run)")
     added, ok = search.run(con, qs, fn, a.max_queries)
     print("added", added)
+    dedupe.run(con)
     if ok == 0:
         print(f"{a.platform} returned nothing; try `--platform auto` to fall back.")
 
@@ -35,6 +37,22 @@ def cmd_import(a, con):
         n += db.upsert_lead(con, row.get("url") or row["fb_url"], row.get("name", ""), row.get("snippet", ""),
                             row.get("website", ""), source="import")
     print("added", n)
+    dedupe.run(con)
+
+
+def cmd_dedupe(a, con):
+    groups, possibles = dedupe.run(con, apply=not a.dry_run)
+    print(f"{len(groups)} duplicate group(s) {'found' if a.dry_run else 'merged'}, {len(possibles)} to review")
+    if groups and not a.dry_run:
+        print("Run `check` then `score` to refresh the merged leads.")
+
+
+def cmd_merge(a, con):
+    rows = [con.execute("SELECT * FROM leads WHERE id=? AND status!='merged'", (i,)).fetchone() for i in a.ids]
+    if any(r is None for r in rows):
+        raise SystemExit("unknown or already-merged lead id")
+    pid = dedupe.merge_rows(con, rows)
+    print(f"merged {len(rows)} leads into #{pid}")
 
 
 def cmd_check(a, con):
@@ -65,8 +83,8 @@ def cmd_draft(a, con):
 
 
 def cmd_export(a, con):
-    rows = con.execute("SELECT * FROM leads WHERE score>0 ORDER BY score DESC").fetchall()
-    cols = ["score", "status", "platform", "name", "url", "website", "shopify_status", "score_notes", "draft"]
+    rows = con.execute("SELECT * FROM leads WHERE score>0 AND status!='merged' ORDER BY score DESC").fetchall()
+    cols = ["score", "status", "platform", "name", "url", "also_on", "website", "shopify_status", "score_notes", "draft"]
     w = csv.writer(open(a.out, "w", newline="", encoding="utf-8"))
     w.writerow(cols)
     w.writerows([[r[c] for c in cols] for r in rows])
@@ -93,6 +111,10 @@ def main(argv=None):
     s.add_argument("--min-new", type=int, default=5, help="auto: keep falling back until this many new leads")
     s.add_argument("--max-queries", type=int, default=10); s.set_defaults(f=cmd_search)
     s = sub.add_parser("import"); s.add_argument("file"); s.set_defaults(f=cmd_import)
+    s = sub.add_parser("dedupe", help="merge the same business found on several platforms")
+    s.add_argument("--dry-run", action="store_true"); s.set_defaults(f=cmd_dedupe)
+    s = sub.add_parser("merge", help="manually merge leads by id (see `dedupe` review lines)")
+    s.add_argument("ids", type=int, nargs="+"); s.set_defaults(f=cmd_merge)
     sub.add_parser("check").set_defaults(f=cmd_check)
     sub.add_parser("score").set_defaults(f=cmd_score)
     s = sub.add_parser("draft"); s.add_argument("--limit", type=int, default=25); s.set_defaults(f=cmd_draft)
