@@ -147,3 +147,39 @@ class SequenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch.dict(os.environ, ENV)
+class DiscoveryTests(unittest.TestCase):
+    def test_adopts_shopify_leads_once(self):
+        con = mem()
+        db.upsert_lead(con, "https://facebook.com/a", "Glow", "skin", "https://glowph.com")
+        db.upsert_lead(con, "https://facebook.com/b", "Plain", "x", "https://plain.ph")
+        db.upsert_lead(con, "https://facebook.com/c", "Opted", "x", "https://optedout.ph")
+        con.execute("UPDATE leads SET shopify_status='has_shopify' WHERE url LIKE '%/a' OR url LIKE '%/c'")
+        db.add_do_not_contact(con, "https://facebook.com/c", "asked")
+        con.commit()
+        self.assertEqual(popload.adopt_shopify_leads(con, log=lambda *_: None), 1)
+        self.assertEqual(popload.adopt_shopify_leads(con, log=lambda *_: None), 0)
+        self.assertEqual(con.execute("SELECT domain, status FROM prospects").fetchall()[0][:], ("glowph.com", "new"))
+
+    def test_discover_filters_hosts_and_dupes(self):
+        con = mem(); popload.add_rows(con, [{"name": "Old", "website": "old.ph"}])
+        results = [{"url": "https://www.facebook.com/x", "title": "x", "snippet": ""},
+                   {"url": "https://old.ph/pages/payment", "title": "Old", "snippet": ""},
+                   {"url": "https://glowph.com/pages/payment?x=1", "title": "Glow PH - Payment | Glow", "snippet": "GCash"},
+                   {"url": "https://glowph.com/other", "title": "Glow again", "snippet": ""},
+                   {"url": "https://en.wikipedia.org/wiki/x", "title": "w", "snippet": ""}]
+        n = popload.discover(con, lambda q: results, ["q"], log=lambda *_: None)
+        self.assertEqual(n, 1)
+        self.assertEqual(con.execute("SELECT name, domain FROM prospects WHERE domain='glowph.com'").fetchone()[:], ("Glow PH", "glowph.com"))
+
+    def test_discover_survives_a_failing_query(self):
+        con = mem()
+        def boom(q): raise OSError("rate limited")
+        self.assertEqual(popload.discover(con, boom, ["a", "b"], log=lambda *_: None), 0)
+
+    def test_queries_rotate_daily(self):
+        from datetime import date
+        a, b = popload.discovery_queries(date(2026, 10, 8)), popload.discovery_queries(date(2026, 10, 9))
+        self.assertEqual(len(a), 4); self.assertNotEqual(a, b); self.assertTrue(all("{" not in q for q in a))

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, showcase
+from . import config, db, dedupe, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -350,6 +350,13 @@ def tick(log=print, stop=None):
         con.execute("INSERT OR REPLACE INTO meta VALUES ('last_pipeline', ?)", (today,))
         con.commit()
         pipeline.run_daily(con, log=log, today=pht.date())
+    popload.adopt_shopify_leads(con, log=log)  # Shopify stores found by the store-build search become POPLoad prospects
+    if (config.env("SERPER_API_KEY") or config.env("BRAVE_API_KEY")) and pht.hour >= config.env_int("PIPELINE_HOUR_PHT", 7):
+        seen = con.execute("SELECT value FROM meta WHERE key='last_discovery'").fetchone()
+        if not seen or seen[0] != today:
+            con.execute("INSERT OR REPLACE INTO meta VALUES ('last_discovery', ?)", (today,))
+            con.commit()
+            popload.discover(con, search.provider(), popload.discovery_queries(pht.date(), config.env_int("PROSPECT_SEARCH_QUERIES", 4)), log=log)
     popload.verify_all(con, log=lambda *_: None)  # checks any newly imported prospects (at most 60 per pass)
     showcase.prepare(con, log=log)  # builds previews a couple of days early; never approves or sends anything
     if config.env("EMAIL_SENDING_ENABLED").lower() == "true":
