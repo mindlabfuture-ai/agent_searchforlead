@@ -241,8 +241,8 @@ class PainTests(unittest.TestCase):
         self.assertIn("email their payment proof", popload.build_message(p, "intro", "https://x.app")["text"])
         con.execute("UPDATE prospects SET pain='messenger'"); con.commit(); p = con.execute("SELECT * FROM prospects").fetchone()
         m = popload.build_message(p, "intro", "https://x.app")["text"]
-        self.assertIn("through Messenger", m); self.assertIn("not the best place to keep payment receipts", m)
-        self.assertIn("through Messenger", popload.build_message(p, "reminder", "https://x.app")["text"])
+        self.assertIn("through social media messages", m); self.assertIn("not the best place to keep payment receipts", m)
+        self.assertIn("through social media messages", popload.build_message(p, "reminder", "https://x.app")["text"])
 
     def test_verification_stores_pain_and_score(self):
         con = mem(); popload.add_rows(con, [{"name": "G", "website": "glowph.com"}])
@@ -319,3 +319,30 @@ class LinkListTests(unittest.TestCase):
 
     def test_placeholder_name_uses_the_brand_label_not_a_subdomain(self):
         self.assertEqual([popload.name_from_domain(d) for d in ("shop.brand-name.com.ph", "pinkmanila.ph", "a-b_c.com")], ["Brand Name", "Pinkmanila", "A B C"])
+
+
+class ChatDetectionTests(unittest.TestCase):
+    def test_social_links_in_a_menu_are_not_a_way_to_send_proof(self):
+        menu = "Log in Sign up Facebook Instagram Home Payment Channels Have an unpaid order? Settle through GCash. Email proof of payment to hello@x.ph with your order number."
+        self.assertNotIn("messenger", popload.detect_pain(menu)); self.assertIn("email", popload.detect_pain(menu))
+
+    def test_real_chat_wording_is_still_found(self):
+        for t in ("Please send a clear copy of the proof of payment via e-mail or Facebook for us to process your order.",
+                  "Send your GCash screenshot to our Messenger.", "DM us your payment receipt with your order number.",
+                  "Proof of payment may be sent through Viber."):
+            self.assertIn("messenger", popload.detect_pain(t), t)
+
+
+class ProofWordingTests(unittest.TestCase):
+    def test_receipt_of_an_item_or_a_returns_email_is_not_payment_proof(self):
+        for t in ("If an item is damaged on receipt of your order, email us within 14 days.",
+                  "Contact us within 7 days of receipt at help@x.ph. Include your order number.",
+                  "You will need the receipt or proof of purchase. To start a return, contact us at a@x.ph.",
+                  "Save the payment instructions by taking a screenshot, or send them to your email.",
+                  "We collect your name, billing address, payment confirmation, email address and phone number."):
+            self.assertEqual(popload.detect_pain(t), [], t)
+
+    def test_real_proof_wording_is_found(self):
+        for t in ("Please email a screenshot of the transaction to a@x.ph.", "Send your deposit slip to a@x.ph",
+                  "kindly email proof of payment to a@x.ph", "Include a GCash screenshot when you email us at a@x.ph"):
+            self.assertIn("email", popload.detect_pain(t), t)
