@@ -68,6 +68,13 @@ class ImportVerifyTests(unittest.TestCase):
         popload.apply_action(con, pid["id"], "email", "owner@glowph.com")
         self.assertEqual(con.execute("SELECT status FROM prospects").fetchone()[0], "verified")
 
+    def test_spreadsheet_tabs_and_semicolons_import_like_commas(self):
+        for d in ("\t", ";", ","):
+            text = d.join(["Merchant Brand", "Niche / Products", "Platform / Domain", "Manual Payment Instructions"]) + "\n" + d.join(["Glow PH", "skin", "glowph.com", "x"]) + "\n"
+            con = mem(); results, _ = popload.add_rows(con, popload.parse_csv("\ufeff" + text))
+            self.assertEqual([(n, s) for n, s, _ in results], [("Glow PH", "added")], repr(d))
+        self.assertEqual(popload.parse_csv('a,b "x; y"\n1,2')[0].get("website"), None)  # a plain comma file is still comma-split
+
     def test_email_filters(self):
         self.assertFalse(popload.plausible_email("xxx@xxx.xxx"))
         self.assertFalse(popload.plausible_email("shop@mrsgarcias.com.phcontact"))

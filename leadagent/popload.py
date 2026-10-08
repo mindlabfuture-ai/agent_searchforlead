@@ -90,8 +90,17 @@ HEADER_MAP = {"merchant brand": "name", "name": "name", "business": "name", "bra
               "manual payment instructions": "claim", "claim": "claim", "notes": "claim", "email": "email"}
 
 
+def _delimiter(text):
+    """Pasted tables arrive comma-separated from a CSV file but tab-separated from a spreadsheet; use whichever the header row uses."""
+    first = next((l for l in (text or "").lstrip("\ufeff").splitlines() if l.strip()), "")
+    counts = {d: first.count(d) for d in (",", "\t", ";", "|")}
+    best = max(counts, key=counts.get)
+    return best if counts[best] else ","
+
+
 def parse_csv(text):
-    rows = [r for r in csv.reader(io.StringIO(text or "")) if any(c.strip() for c in r)]
+    text = (text or "").lstrip("\ufeff")
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter=_delimiter(text)) if any(c.strip() for c in r)]
     if not rows:
         return []
     head = [HEADER_MAP.get(h.strip().lower()) for h in rows[0]]
