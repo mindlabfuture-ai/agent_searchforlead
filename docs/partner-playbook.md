@@ -18,7 +18,7 @@ How MindLab turns an outreach reply into a live store, partner commission and PO
 
 ## POPLoad on a transfer store
 Yes, you can build the store with POPLoad installed and then transfer it. Three things to know:
-1. **Installable?** While a client transfer store is in your organization, Shopify says "you can only install free apps and partner-friendly apps. Custom and draft apps can't be installed." It does not define "partner-friendly". POPLoad was still in Shopify's review, and community reports say apps awaiting review can be blocked from installing. **Test the install on your first transfer store before promising it to a merchant.** If it is blocked, the fallback is to hand the store over first, then install POPLoad from the merchant's side with a collaborator request, and say so in the email.
+1. **Installable?** While a client transfer store is in your organization, Shopify says "you can only install free apps and partner-friendly apps. Custom and draft apps can't be installed." It does not define "partner-friendly". POPLoad is still in Shopify's review (the email calls it "early access"), and community reports say apps awaiting review can be blocked from installing. **Test the install on your first transfer store before promising it to a merchant.** If it is blocked, the fallback is to hand the store over first, then install POPLoad from the merchant's side with a collaborator request, and say so in the email.
 2. **Billing before and after.** POPLoad's own code (`web/lib/billing.js`) creates *test* subscriptions on development stores and real ones only when `BILLING_TEST=false` on a live shop. Test charges are cancelled when a store goes live, so the merchant must approve a real plan after the handover. Keep the store on POPLoad's free tier (10 uploads) while you build, then tell the merchant about the monthly charge before they accept the transfer. Paid plans can't be approved on client transfer stores anyway.
 3. **After transfer.** The store leaves your organization. Ask for collaborator access immediately. Consider handling Shopify's `shop/update` webhook in POPLoad to notice the switch from development to live.
 
@@ -30,12 +30,11 @@ Before transferring: no real transactions can run on a transfer store, the onlin
 | Referral commission | 20% of the monthly base platform fee, for 4 years | Calculated on fees actually paid, net of discounts. Excludes Starter and Lite. Payouts monthly with a 30-day hold. Shopify decides payouts at its discretion. |
 | Example: Basic plan | about $5/month at $25/month, about $3.80 at the yearly rate | Shopify's Philippines pricing page lists Basic at $25/month monthly, $19/month yearly. |
 | POPLoad subscription | about $9.70/month at $9.99 | App revenue share is 100% up to $1M, minus a 2.9% processing fee. This is the bigger earner per store. |
-| Money-back guarantee exposure | capped at ₱1,000 per store (about $17), covering the first month | One month of Basic is about $25 (about ₱1,400), so the cap can be lower than the fee. Your commission on that first month is about $5. |
 
 **Confirm in the Partner Dashboard before counting on it:** search results disagreed on whether standard plans still earn the 20% after July 2025. The Help Center page says they do (excluding Starter and Lite). Check the "Partner earning model" FAQ it links to.
 
-## Guarantee: write it down
-The email promises: "if your store makes no sales in its first month, I'll refund the Shopify fees you paid, up to ₱1,000." Put the terms in writing before the first handover, for example: counted from the day the store goes live (the day the merchant accepts the transfer), "no sales" means no paid orders from real customers, refund on proof of the Shopify invoice, within 14 days of asking, one refund per store. The cap means a merchant on a plan costing more than ₱1,000 for the month is refunded ₱1,000 only, so say that plainly when they ask which plan to choose. Edit `OFFER_EN` and `OFFER_TL` in `leadagent/emailing.py` if the promise changes.
+## No guarantee
+The offer has no money-back guarantee. The merchant gets a free build and early access to POPLoad, and pays only Shopify (their plan) and any domain. Your cost per store is build time, so time-box it: one cloned template store, a fixed product limit, about 3 hours.
 
 ## Growth follow-up (planned)
 Per store after handover: day 7 check POPLoad is working and the first payment-receipt flow has been tested; day 30 growth tips (product photos, Facebook/Instagram catalog links, GCash QR on the thank-you page) and a short review ask; day 80 a heads-up on the plan price and an upgrade or VIPriority suggestion where it fits (luxury items).
