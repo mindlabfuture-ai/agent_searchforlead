@@ -66,6 +66,28 @@ CREATE TABLE IF NOT EXISTS prospect_steps (  -- the POPLoad email sequence, one 
   attempts INTEGER DEFAULT 0, sent_at TEXT, resend_id TEXT, note TEXT,
   UNIQUE(prospect_id, step)
 );
+CREATE TABLE IF NOT EXISTS assistant_proposals (  -- things the assistant suggests; nothing runs until the owner confirms
+  id INTEGER PRIMARY KEY, created_at TEXT, action TEXT NOT NULL, args TEXT NOT NULL, summary TEXT, reason TEXT,
+  source TEXT DEFAULT 'chat',   -- chat | briefing
+  status TEXT DEFAULT 'pending',  -- pending | done | dismissed | failed
+  result TEXT, decided_at TEXT
+);
+CREATE TABLE IF NOT EXISTS assistant_briefings (day TEXT PRIMARY KEY, payload TEXT NOT NULL, emailed_at TEXT);
+CREATE TABLE IF NOT EXISTS assistant_chat (id INTEGER PRIMARY KEY, created_at TEXT, role TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS inbox_messages (  -- every message the inbox agent read (subjects and a summary, never the body)
+  id INTEGER PRIMARY KEY, msg_id TEXT UNIQUE, ts TEXT, source TEXT,  -- source: email | website form
+  addr TEXT, name TEXT, subject TEXT, category TEXT, priority TEXT, score INTEGER, summary TEXT,
+  status TEXT,  -- processing | spam | notified | draft_waiting | auto_replied | opted_out | error
+  matched TEXT, pending_id INTEGER, attempts INTEGER DEFAULT 0, note TEXT
+);
+CREATE TABLE IF NOT EXISTS inbox_leads (  -- people who wrote to us (not the people we cold-emailed)
+  email TEXT PRIMARY KEY, name TEXT, company TEXT, score INTEGER, category TEXT, first_ts TEXT, last_inbound_ts TEXT,
+  last_outbound_ts TEXT, nurture_step INTEGER DEFAULT 0, stopped INTEGER DEFAULT 0, thread TEXT
+);
+CREATE TABLE IF NOT EXISTS inbox_pending (  -- reply and nurture drafts waiting for your Send or Skip
+  id INTEGER PRIMARY KEY, email TEXT, subject TEXT, body TEXT, in_reply_to TEXT, kind TEXT,  -- reply | nurture
+  status TEXT DEFAULT 'waiting', ts TEXT, decided_at TEXT
+);
 CREATE TABLE IF NOT EXISTS suppressed_emails (email TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """

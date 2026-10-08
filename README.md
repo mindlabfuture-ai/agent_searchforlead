@@ -118,6 +118,29 @@ To turn email on:
 3. Set `RESEND_API_KEY`, `SENDER_FROM_EMAIL`, `UNSUB_SECRET`, then `EMAIL_SENDING_ENABLED=true`. The service refuses to start live without them.
 4. Ramp slowly: start at `EMAIL_DAILY_CAP=5` for a week or two and check bounces and complaints before raising it.
 
+## The assistant (your right hand)
+
+Open **Assistant** in the dashboard (`/assistant`). It watches the whole system and tells you what needs you:
+- **Health**: missing or weak settings, bounce and spam-complaint rates against Resend's limits, failed sends, a silent Resend webhook, a stalled daily search, demo sites that cannot be taken down. Worst first; the lead queue shows a red count when something is critical.
+- **Needs you**: first emails and prospects waiting for approval, showcase previews to review, and a reminder to check your inbox for replies *before* a prospect's next email goes out (replies are not detected automatically; mark them).
+- **Daily brief**: saved every morning (08:00 PHT, `BRIEF_HOUR_PHT`) and emailed to `OWNER_EMAIL` if you set it, plus an email when a new critical problem appears (at most once a day each). It cannot report a total outage: use Railway's healthcheck plus an uptime monitor on `/health` for that.
+- **Suggestions**: things it thinks you should stop or tidy (reject a prospect, mark a reply, pause a client, take a demo down) wait for your **Confirm** click. Nothing runs before that.
+- **Chat** (needs `ANTHROPIC_API_KEY`; `ASSISTANT_MODEL`, default `claude-opus-5-5`; `ASSISTANT_DAILY_LIMIT` questions a day, default 60): ask "what should I do today?", "which prospects look strongest?", "why did sending stop?". It reads live data with tools, can suggest actions, and can run internal tidy-up tasks (verify prospects, adopt Shopify leads, build previews, health check).
+
+What it can never do, enforced in code and tests: approve a first email, a showcase email, a POPLoad sequence or a demo site, send anything to a lead, or publish. It can stop things; starting outreach stays yours, one by one. Text from leads and websites reaches the model only as tool data, and the worst it can lead to is a suggestion you can dismiss.
+
+## The support inbox (moved here from sms-compliance)
+
+The agent that watches `support@mindlabfuture-ai.com` now runs inside this service, under the assistant. It reads new mail and the website contact form, moves spam to an `Agent-Spam` folder, triages with Claude (category, priority, lead score, a one-line summary), tells you on Telegram and on the **Inbox** page, and drafts a reply that waits for your **Send** (you can edit it first). Quiet sales enquiries get gentle follow-up drafts after 2, 5 and 10 days, in business hours. What it may say is in `leadagent/inbox_knowledge.md`.
+
+What changed from the standalone agent:
+- **Replies to our own outreach are recognised** (by address, or by the business's own domain) and stop that lead's sequence on their own, so nobody is emailed again after answering. "Stop", "unsubscribe" and similar suppress the address for good, with no model involved.
+- **A reply to someone we cold-emailed is always a draft**, even in `REPLY_MODE=auto`. Auto-replies stay limited to people who wrote in on their own, and never for urgent messages.
+- **Nothing gets lost**: a message the model fails on is retried, then reported to you and left unread in the mailbox.
+- Subjects and summaries are stored, never message bodies. The assistant sees counts, drafts and problems, and warns if the mailbox has not been read for 15 minutes.
+
+**Switching over** (do it in this order, or two agents will answer the same mail): 1) stop the old `agent` service in the Railway project `mindlab-inbound-agent`; 2) copy its variables into this service (`ANTHROPIC_API_KEY`, `AGENT_MODEL`, `IMAP_HOST`, `SMTP_HOST`, `SMTP_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM_NAME`, `POLL_SECONDS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WEBHOOK_TOKEN`, `REPLY_MODE`, `AUTO_CONFIDENCE`, `NURTURE_DAYS`; same names, so a copy-paste works); 3) set `INBOX_ENABLED=true`; 4) in Netlify, point the contact form's outgoing webhook to `https://leads.mindlabfuture-ai.com/webhook/form?token=<WEBHOOK_TOKEN>`. Start with `REPLY_MODE=draft`.
+
 ## POPLoad prospects (existing Shopify stores)
 
 A separate track for stores that already run on Shopify and take GCash or bank transfer, to offer POPLoad (customers upload the receipt, you approve it in one click). Open **POPLoad prospects** in the dashboard, or use `python -m leadagent prospects import FILE | verify | list | run`.

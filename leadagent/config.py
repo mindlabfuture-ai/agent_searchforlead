@@ -67,6 +67,13 @@ def env_int(name, default):
         return default
 
 
+def env_float(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
 def base_url():
     """Public URL of this service, used in unsubscribe links."""
     if env("BASE_URL"):
