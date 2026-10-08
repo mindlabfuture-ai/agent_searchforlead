@@ -1,0 +1,5 @@
+Shopify Dawn v16.0.0
+repo: https://github.com/Shopify/dawn
+commit: bc39a7d2024f1e5c14c42f855bd3552b4913e204
+licence: see LICENSE.md in the dawn folder (use limited to themes that work with Shopify; keep the notice)
+unmodified copy; per-store changes are applied by leadagent/themezip.py when the zip is built

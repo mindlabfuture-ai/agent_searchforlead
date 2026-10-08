@@ -130,6 +130,10 @@ def render_editor(con, lead_id, tok, message="", now=None):
     else:
         demo_html = "<p>Build a preview first.</p>"
     demo_dl = f" <a href='/previews/{lead_id}/demo.zip'>demo site (zip)</a>" if pv else ""
+    theme_section = (f"<section><h3>Shopify theme</h3><p><a href='/previews/{lead_id}/theme.zip'>theme.zip</a> &middot; "
+                     f"<a href='/previews/{lead_id}/products.csv'>products.csv</a> &middot; <a href='/previews/{lead_id}/setup.md'>setup guide</a></p>"
+                     f"<p><small>Shopify Dawn with their colours, logo and home page text. Upload theme.zip under Online Store > Themes, then import "
+                     f"products.csv (drafts). Not tested against a live store: open it in the theme editor before handing over.</small></p></section>") if pv else ""
     file_in = lambda name, label: (f"<label>{label}</label><input type=file name={name} accept='image/png,image/jpeg,image/gif,image/webp'>"
                                    + (f" <label style=display:inline><input type=checkbox name=rm_{name} value=1> remove the uploaded one</label>" if pv and name in pv.get("uploads", []) else ""))
     style_opts = "".join(f"<option value={k}{' selected' if ov.get('style') == k else ''}>{E(v['label'])}</option>" for k, v in previews.STYLES.items())
@@ -163,7 +167,7 @@ def render_editor(con, lead_id, tok, message="", now=None):
             f"<p><a href=\"{E(lead['url'])}\" rel='noopener noreferrer' target=_blank>{E(lead['url'])}</a>"
             f"{' &middot; website: ' + E(lead['website']) if lead['website'] else ''} &middot; email: {E(lead['email'] or 'none')}</p><p>{E(_timeline(con, lead, now))}</p>"
             f"{info}{('<p>' + thumbs + '</p>') if thumbs else ''}<section><h3>Your actions</h3><p>{actions}{downloads}{demo_dl}</p></section>"
-            f"<section><h3>Demo site</h3>{demo_html}</section>"
+            f"<section><h3>Demo site</h3>{demo_html}</section>{theme_section}"
             f"<section><h3>The showcase email, exactly as it will be sent</h3>{preview}</section><section><h3>Add what you have</h3>{form}</section>")
 
 
