@@ -385,6 +385,13 @@ class DemoStoreKnowledgeTests(unittest.TestCase):
         self.assertNotIn("<!--", k); self.assertNotIn("{{", k)
         self.assertIn("Never send or promise a login", k)
 
+    def test_demo_video_line_appears_only_when_a_video_is_set(self):
+        base = {"DEMO_STORE_URL": "a.myshopify.com", "DEMO_STORE_PASSWORD": "pw"}
+        self.assertIn("https://youtu.be/abc", inbox.load_knowledge(dict(base, POPLOAD_DEMO_URL="https://youtu.be/abc")))
+        for v in ("", "javascript:alert(1)", "https://x y"):
+            k = inbox.load_knowledge(dict(base, POPLOAD_DEMO_URL=v))
+            self.assertNotIn("Demo video", k); self.assertNotIn("{{", k); self.assertIn("Customer side", k)
+
     def test_section_is_left_out_unless_both_values_are_set_and_sane(self):
         for env in ({}, {"DEMO_STORE_URL": "shop.myshopify.com"}, {"DEMO_STORE_PASSWORD": "x"},
                     {"DEMO_STORE_URL": "bad host!", "DEMO_STORE_PASSWORD": "x"}, {"DEMO_STORE_URL": "a.myshopify.com", "DEMO_STORE_PASSWORD": "x\ny"}):

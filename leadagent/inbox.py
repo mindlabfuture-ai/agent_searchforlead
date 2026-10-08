@@ -38,8 +38,14 @@ def load_knowledge(env=None):
     host = re.sub(r"^https?://|/.*$", "", (get("DEMO_STORE_URL") or "").strip().lower())
     password = (get("DEMO_STORE_PASSWORD") or "").strip()
     block = re.compile(r"<!--demo-->(.*?)<!--/demo-->\n?", re.S)
+    video = (get("POPLOAD_DEMO_URL") or "").strip()
     if host and password and re.fullmatch(r"[a-z0-9.-]+", host) and "\n" not in password:
-        return block.sub(lambda m: m.group(1).replace("{{DEMO_HOST}}", host).replace("{{DEMO_PASSWORD}}", password), text)
+        def fill(m):
+            body = m.group(1).replace("{{DEMO_HOST}}", host).replace("{{DEMO_PASSWORD}}", password)
+            if video.startswith("https://") and "\n" not in video and " " not in video:
+                return body.replace("{{DEMO_VIDEO}}", video)
+            return re.sub(r"[^\n]*\{\{DEMO_VIDEO\}\}[^\n]*\n", "", body)  # no video set: leave that line out
+        return block.sub(fill, text)
     return block.sub("", text)
 
 
