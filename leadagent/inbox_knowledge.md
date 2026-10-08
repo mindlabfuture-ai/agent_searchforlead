@@ -15,10 +15,11 @@
 
 ## Our own outreach (some senders are replying to an email we sent them)
 - Store build offer: we build a Shopify store for free, then hand it over. The merchant picks and pays their own Shopify plan. The domain is not included; a free yourshop.mindlabfuture-ai.com subdomain is available. Early access to POPLoad is included. As a Shopify Partner we may earn a referral fee from Shopify at no extra cost to them.
-- POPLoad offer to existing Shopify stores: early access, we install it with them, the first 10 receipt uploads are free.
+- POPLoad offer to existing Shopify stores: POPLoad is in Shopify's review, so we onboard a small number of Philippine stores personally; the first 10 receipt uploads are free; they can ask for a short demo first. Do not promise a date or a particular install method.
 
 <!--demo-->
 ## POPLoad demo store (a development store with sample data and POPLoad installed; offer it when someone asks to see, try or "demo" POPLoad)
+- Demo video (2 minutes): {{DEMO_VIDEO}}
 - Customer side, no account needed: open https://{{DEMO_HOST}} and enter the storefront password {{DEMO_PASSWORD}}. Add any product to the cart, check out choosing the bank transfer / QR payment option, then on the Thank You page upload any image as the "receipt". It is a test store: no real payment, and please do not upload real receipts or personal documents.
 - Merchant side (the admin where the order and POPLoad live): the admin needs a login, so the owner invites them personally. If they want it, ask for the email they use for Shopify; the owner then sends a Shopify staff invitation limited to Apps and Orders (it arrives by email, expires after about 7 days, and is removed after the demo). Never send or promise a login or password, never say the invitation is already sent, and never share the admin address before an invitation exists.
 - Their own store: while POPLoad is in Shopify's review, we onboard a small number of stores personally. Ask for their store URL and say we will arrange it with them. Do not promise a date or an install method.

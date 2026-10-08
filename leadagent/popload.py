@@ -41,7 +41,7 @@ COPY = {
         items=["Upload: customers pay by bank transfer, GCash or Maya, then upload the receipt right on the order page.",
                "Approve: you see it in your Shopify admin, attached to the order, and approve it with one click. The order is marked as paid.",
                "Calm inbox: no more digging through emails and chats for proof of payment."],
-        closing="POPLoad is still in Shopify's app review, so I am offering early access: I install it with you, and the first 10 receipt uploads are free. Want to see how it works? I can send a 2-minute demo.",
+        closing="POPLoad is still in Shopify's app review, so I am onboarding a small number of Philippine stores personally, and the first 10 receipt uploads are free. Want to see how it works? I can send a 2-minute demo, and you can try it yourself on my demo store.",
         cta="Yes, send the demo", cta_subject="POPLoad demo"),
     "reminder": dict(
         subject="Quick question about payment proofs",
@@ -61,7 +61,7 @@ COPY = {
         items=["Before: a screenshot arrives in Messenger or email and someone has to find the order.",
                "After: the receipt is already attached to the order.",
                "Your side: review it and approve, in one place."],
-        closing="If {name} collects payment proof by hand today, this is the step POPLoad takes away. I am happy to install it with you.",
+        closing="If {name} collects payment proof by hand today, this is the step POPLoad takes away. I am happy to walk you through it.",
         cta="Watch the 2-minute demo", cta_subject="POPLoad demo"),
     "last_note": dict(
         subject="Should I close the loop?",
