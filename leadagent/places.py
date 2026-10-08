@@ -47,17 +47,21 @@ def to_lead(place):
     kind = (place.get("primaryTypeDisplayName") or {}).get("text") or ""
     snippet = " | ".join(x for x in (kind, place.get("formattedAddress"), "Phone " + place["nationalPhoneNumber"]
                                      if place.get("nationalPhoneNumber") else "", "Google Maps listing") if x)
-    site = (place.get("websiteUri") or "").strip()
     maps_url = place.get("googleMapsUri") or f"https://www.google.com/maps/place/?q=place_id:{place.get('id', '')}"
-    lead = dict(name=name, snippet=snippet, source="places")
+    return site_lead(dict(name=name, snippet=snippet, source="places"), (place.get("websiteUri") or "").strip(), maps_url)
+
+
+def site_lead(lead, site, listing_url):
+    """Finish a directory listing as upsert_lead arguments, by what its website field holds. A social or marketplace
+    page is an ordinary lead of that platform, an own domain a `web` lead, no site a `maps` lead keyed by the listing."""
     if site:
         platform, canon = db.normalize(site)
-        if canon:                      # a Facebook/Instagram/Shopee/... page: an ordinary lead of that platform
+        if canon:
             return dict(lead, url=canon)
         host = dedupe.host_key(site)  # None for social/marketplace/link-in-bio/shortener hosts
         if host:
             return dict(lead, url=f"https://{host}", website=f"https://{host}", platform="web")
-    return dict(lead, url=maps_url, website=site, platform="maps")
+    return dict(lead, url=listing_url, website=site, platform="maps")
 
 
 def discover(con, key=None, queries=None, today=None, max_pages=None, log=print, search_fn=None):
