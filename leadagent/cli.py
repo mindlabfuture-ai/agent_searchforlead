@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, places, popload, previews, search, showcase
+from . import config, db, dedupe, emailing, followups, importer, osm, pipeline, places, popload, previews, search, showcase
 
 
 def load_env():
@@ -28,6 +28,14 @@ def cmd_search(a, con):
     dedupe.run(con)
     if ok == 0:
         print(f"{a.platform} returned nothing; try `--platform auto` to fall back.")
+
+
+def cmd_osm(a, con):
+    """Find local shops in OpenStreetMap (free, no key)."""
+    qs = [(a.group, a.location)] if a.group and a.location else osm.daily_queries(n=a.max_queries)
+    print("added", osm.discover(con, queries=qs))
+    dedupe.run(con)
+    print("run `check` next to look at their websites")
 
 
 def cmd_places(a, con):
@@ -192,6 +200,9 @@ def main(argv=None):
                    help="auto = Facebook first, then fall back to other platforms")
     s.add_argument("--min-new", type=int, default=5, help="auto: keep falling back until this many new leads")
     s.add_argument("--max-queries", type=int, default=10); s.set_defaults(f=cmd_search)
+    s = sub.add_parser("osm", help="find local shops in OpenStreetMap (free, no key)")
+    s.add_argument("--group", choices=sorted(osm.GROUPS)); s.add_argument("--location")
+    s.add_argument("--max-queries", type=int, default=3); s.set_defaults(f=cmd_osm)
     s = sub.add_parser("places", help="find local shops through Google Places (official API)")
     s.add_argument("--niche"); s.add_argument("--location"); s.add_argument("--max-queries", type=int, default=3)
     s.add_argument("--pages", type=int, default=2); s.set_defaults(f=cmd_places)

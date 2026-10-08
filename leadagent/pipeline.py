@@ -2,7 +2,7 @@
 import threading
 from datetime import date
 
-from . import config, db, dedupe, emailing, outreach, places, scoring, search, shopify_check
+from . import config, db, dedupe, emailing, osm, outreach, places, scoring, search, shopify_check
 
 
 WORK_LOCK = threading.Lock()  # the scheduler and dashboard imports must not run the pipeline at once
@@ -70,8 +70,12 @@ def _run_daily(con, log, today):
         dedupe.run(con, log=log)
     else:
         log("no search key set; skipping discovery")
+    found = 0
+    if config.env("OSM_DISCOVERY", "true").lower() != "false":  # free; set OSM_DISCOVERY=false to turn off
+        found += osm.discover(con, today=today, log=log)
     if config.env("GOOGLE_PLACES_API_KEY"):
-        places.discover(con, today=today, log=log)
+        found += places.discover(con, today=today, log=log)
+    if found:
         dedupe.run(con, log=log)
     check_all(con, log)
     log(f"{score_all(con)} qualified")

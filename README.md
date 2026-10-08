@@ -173,7 +173,22 @@ On a lead's preview page, **Publish demo site** builds a small storefront from t
 
 Guardrails, because it shows a real business's name on your domain: a banner on every page says it is a design preview and not a live store; nothing can be bought (Add to cart only shows a notice); sample products are labelled; `noindex`, `robots.txt` and an `X-Robots-Tag` header keep search engines out; no scripts or styles from other sites except Google Fonts; it is deleted after 30 days (extendable), and at once when the lead unsubscribes, bounces, is marked do-not-contact or lost, or the showcase is skipped. Only you publish; the day-7 email links to it only while it is live.
 
-## Google Places discovery (when social search finds too little)
+## Free local discovery (OpenStreetMap)
+
+On by default and free: no key, no account, no prepayment. Each daily run asks the public Overpass servers (`OSM_DAILY_QUERIES`
+searches a day, default 3) for shops in one of your cities that mappers tagged with a website, a Facebook or Instagram
+page, an email or a phone, rotating through six shop groups (fashion, beauty, home, food, kids/pets/gifts, gadgets).
+Turn it off with `OSM_DISCOVERY=false`; point it at your own server with `OVERPASS_URL` (comma-separated list).
+Try it by hand: `python -m leadagent osm --group fashion --location "Cebu City"`.
+
+A listing becomes a lead by what it carries: a Facebook / Instagram / Shopee page is an ordinary lead of that platform
+(so Facebook pages turn up without touching Facebook), an own domain is a `web` lead checked for Shopify, and a listed
+`email` tag is kept as the lead's public email. A listing with only a phone number is a `maps` lead (phone or in person).
+Coverage of small Philippine online sellers is thinner than Google's: expect a steady trickle, not a flood. The public
+servers are shared and sometimes busy, so each query tries several in turn and a failure is logged, never fatal.
+Data (c) OpenStreetMap contributors, ODbL.
+
+## Google Places discovery (optional, paid)
 
 Set `GOOGLE_PLACES_API_KEY` and the daily run also asks Google's official Places API for local shops (`PLACES_DAILY_QUERIES`
 searches a day, default 3, each following up to `PLACES_MAX_PAGES` pages of 20, default 2). Nothing is scraped. A listing

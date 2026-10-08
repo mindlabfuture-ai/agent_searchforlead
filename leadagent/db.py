@@ -171,7 +171,7 @@ def connect(path):
     return con
 
 
-def upsert_lead(con, url, name="", snippet="", website="", source="", platform=None):
+def upsert_lead(con, url, name="", snippet="", website="", source="", platform=None, email="", email_source=""):
     """Insert unless already known or on the do-not-contact list. Returns True if new.
     `platform` is for leads that are not social profiles (a business's own website, a map listing): `url` is then
     already canonical and is stored as given."""
@@ -186,8 +186,8 @@ def upsert_lead(con, url, name="", snippet="", website="", source="", platform=N
         return False
     t = now()
     con.execute(
-        "INSERT INTO leads (platform,url,name,snippet,website,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-        (platform, canon, name, snippet, website, source, t, t))
+        "INSERT INTO leads (platform,url,name,snippet,website,source,email,email_source,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (platform, canon, name, snippet, website, source, email or None, email_source or None, t, t))
     con.commit()
     return True
 
