@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urljoin, urlparse
 
-from . import config, db, emailing, emailtemplate, shopify_check
+from . import config, db, emailing, emailtemplate, search, shopify_check
 
 MAX_ROWS = 300
 PAGES = ["/", "/pages/contact", "/pages/contact-us", "/pages/payment", "/pages/payment-options", "/pages/faq", "/policies/refund-policy"]
@@ -109,6 +109,76 @@ def add_rows(con, rows):
         results.append((name, "added", ""))
     con.commit()
     return results, len(rows) > MAX_ROWS
+
+
+# ---------- finding more ----------
+# Stores that take manual payments say so on their own pages. These phrases find those pages through a search
+# API (no scraping). Results are only candidates: verification below decides whether they are real.
+DISCOVERY_QUERIES = [
+    '"proof of payment" GCash "order number" {niche} Philippines',
+    '"send screenshot" "bank transfer" GCash {niche} Philippines shop',
+    'myshopify.com {niche} Philippines GCash bank transfer',
+    '"message us on Messenger" order {niche} Philippines Shopify',
+]
+SKIP_HOSTS = config.NON_STORE_HOSTS + ["google.", "bing.", "wikipedia.", "reddit.", "pinterest.", "medium.com", "blogspot.",
+                                              "wordpress.com", "shopify.com", "apps.shopify", "forbes.", "yahoo.", "gov.ph", "edu.ph"]
+PER_QUERY = 10
+
+
+def adopt_shopify_leads(con, log=print):
+    """Store-build leads whose own site turned out to run Shopify don't need a store, but they are POPLoad
+    prospects. Copy them across (verification then decides); the lead itself is left as it was."""
+    rows = con.execute("SELECT * FROM leads WHERE shopify_status='has_shopify' AND website!='' AND status NOT IN ('merged','do_not_contact')").fetchall()
+    cands = [{"name": r["name"] or domain_of(r["website"]), "website": r["website"], "niche": (r["snippet"] or "")[:120],
+              "claim": ""} for r in rows
+             if not con.execute("SELECT 1 FROM do_not_contact WHERE url=?", (r["url"],)).fetchone()]
+    added = 0
+    for c in cands:
+        dom = domain_of(c["website"])
+        if dom and not con.execute("SELECT 1 FROM prospects WHERE domain=?", (dom,)).fetchone():
+            # add_rows skips store-build leads by design; this is the one place that is wanted, so insert directly
+            now = db.now()
+            con.execute("INSERT INTO prospects (name,website,domain,niche,claim,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                        (" ".join(c["name"].split())[:80], "https://" + dom, dom, c["niche"], "from the lead list", now, now))
+            added += 1
+    con.commit()
+    if added:
+        log(f"adopted {added} Shopify store(s) from the lead list")
+    return added
+
+
+def discovery_queries(today=None, n=4):
+    """Rotate through niche x phrase so each day's few searches cover something new."""
+    ordinal = (today or date.today()).toordinal()
+    out = []
+    for i in range(n):
+        k = ordinal * n + i
+        out.append(DISCOVERY_QUERIES[k % len(DISCOVERY_QUERIES)].format(niche=config.NICHES[(k // len(DISCOVERY_QUERIES)) % len(config.NICHES)]))
+    return out
+
+
+def discover(con, search_fn, queries, log=print):
+    """Run the queries and add each result's site as a prospect. Returns the number added."""
+    added = 0
+    for q in queries:
+        try:
+            results = search_fn(q)
+        except Exception as e:  # a bad query or rate limit must not stop the rest
+            log(f"! {q}: {e}")
+            continue
+        rows, seen = [], set()
+        for r in results:
+            dom = domain_of(r.get("url"))
+            if not dom or dom in seen or any(h in dom for h in SKIP_HOSTS):
+                continue
+            seen.add(dom)
+            rows.append({"name": search.clean_name(r.get("title", "")).split(" - ")[0].split(" | ")[0][:80] or dom,
+                         "niche": (r.get("snippet") or "")[:120], "website": dom, "claim": "found by search: " + q[:60]})
+        results_, _ = add_rows(con, rows[:PER_QUERY])
+        n = sum(1 for _, s, _ in results_ if s == "added")
+        added += n
+        log(f"{n:>3} new <- {q}")
+    return added
 
 
 # ---------- verifying ----------

@@ -130,6 +130,11 @@ def cmd_prospects(a, con):
         for label, st, note in results:
             if st != "added":
                 print(f"  {st}: {label} {note}")
+    elif a.sub == "adopt":
+        print("adopted", popload.adopt_shopify_leads(con))
+    elif a.sub == "discover":
+        n = popload.discover(con, search.provider(), popload.discovery_queries(n=a.max_queries))
+        print("added", n, "(run `prospects verify` next)")
     elif a.sub == "verify":
         while popload.verify_all(con):
             pass
@@ -200,10 +205,11 @@ def main(argv=None):
     s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_showcase)
     s = sub.add_parser("prospects", help="POPLoad prospects (existing Shopify stores)"); ps = s.add_subparsers(dest="sub", required=True)
     s = ps.add_parser("import"); s.add_argument("file")
-    ps.add_parser("verify")
+    ps.add_parser("verify"); ps.add_parser("adopt")
+    s = ps.add_parser("discover"); s.add_argument("--max-queries", type=int, default=4)
     s = ps.add_parser("list"); s.add_argument("--status", default="")
     s = ps.add_parser("run"); s.add_argument("--force", action="store_true")
-    s.set_defaults(f=cmd_prospects); ps.choices["import"].set_defaults(f=cmd_prospects); ps.choices["verify"].set_defaults(f=cmd_prospects); ps.choices["list"].set_defaults(f=cmd_prospects)
+    s.set_defaults(f=cmd_prospects); ps.choices["import"].set_defaults(f=cmd_prospects); ps.choices["verify"].set_defaults(f=cmd_prospects); ps.choices["adopt"].set_defaults(f=cmd_prospects); ps.choices["discover"].set_defaults(f=cmd_prospects); ps.choices["list"].set_defaults(f=cmd_prospects)
     sub.add_parser("serve", help="run the dashboard + scheduler (Railway)").set_defaults(f=cmd_serve)
     sub.add_parser("score").set_defaults(f=cmd_score)
     s = sub.add_parser("draft"); s.add_argument("--limit", type=int, default=25); s.set_defaults(f=cmd_draft)
