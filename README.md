@@ -141,6 +141,20 @@ What changed from the standalone agent:
 
 **Switching over** (do it in this order, or two agents will answer the same mail): 1) stop the old `agent` service in the Railway project `mindlab-inbound-agent`; 2) copy its variables into this service (`ANTHROPIC_API_KEY`, `AGENT_MODEL`, `IMAP_HOST`, `SMTP_HOST`, `SMTP_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM_NAME`, `POLL_SECONDS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `WEBHOOK_TOKEN`, `REPLY_MODE`, `AUTO_CONFIDENCE`, `NURTURE_DAYS`; same names, so a copy-paste works); 3) set `INBOX_ENABLED=true`; 4) in Netlify, point the contact form's outgoing webhook to `https://leads.mindlabfuture-ai.com/webhook/form?token=<WEBHOOK_TOKEN>`. Start with `REPLY_MODE=draft`.
 
+### POPLoad demo store (try it firsthand)
+
+Set `DEMO_STORE_URL` (the dev store's `xxx.myshopify.com` address) and `DEMO_STORE_PASSWORD` (its storefront password) in Railway and the inbox agent knows how to offer the demo store when a prospect asks to see or try POPLoad: the customer side by storefront link and password, the merchant admin only by a staff invitation you send yourself (limited to Apps and Orders, removed after the demo). Unset either variable and the agent does not mention a demo store. The password is never in the repository. The agent still only drafts replies to people we emailed; you review and send.
+
+Reply shape when someone asks for the demo (the agent drafts something like this; edit freely):
+
+> Hi {name}, thanks for asking! You can try POPLoad on our demo store, no account needed:
+> 1. Open https://{DEMO_STORE_URL} and enter the password {DEMO_STORE_PASSWORD}
+> 2. Add any product, check out with the bank transfer / QR payment option
+> 3. On the Thank You page, upload any image as the "receipt"
+>
+> It is a test store, so please don't upload a real receipt. If you'd like to see the merchant side (where you review and approve the receipt), reply with the email you use for Shopify and I'll send a view-only invitation to the store admin.
+> Which store would you use it on?
+
 ## POPLoad prospects (existing Shopify stores)
 
 A separate track for stores that already run on Shopify and take GCash or bank transfer, to offer POPLoad (customers upload the receipt, you approve it in one click). Open **POPLoad prospects** in the dashboard, or use `python -m leadagent prospects import FILE | verify | list | run`.
