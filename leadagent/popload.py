@@ -358,12 +358,12 @@ def apply_verification(con, pid, res):
 
 
 # What the shop's own pages say about how proof of payment reaches them. Only wording found on the site counts.
-_PROOF = r"(proof|receipt|screenshot|deposit slip|payment slip|transaction)"
+_PROOF = r"(proof of (payment|transfer|deposit)|payment proof|deposit slip|payment slip|(payment|deposit|transfer|bank|gcash|maya|transaction) (receipt|screenshot|slip)|screenshot of (the |your |a )?(payment|transaction|deposit|transfer|receipt|bank|gcash)|receipt of (payment|deposit|transfer))"  # not a bare "receipt": that is also the delivery of an item
 _EMAIL = r"(e-?mail|@[\w-]+)"
-_CHAT = r"(messenger|facebook|fb page|viber|instagram|\bdm\b|direct message|whatsapp)"
+_CHAT = r"((via|through|thru|using|on|to|by|in|or|and|/)\s+(our\s+|the\s+)?(official\s+)?(facebook|fb|instagram|ig|messenger|viber|whatsapp)\b|messenger|viber|whatsapp|direct message|\bdm\b|\bpm us\b)"  # a social link in a menu ("Facebook Instagram") is not a way to send proof
 PAIN_RULES = {
-    "email": (rf"{_EMAIL}.{{0,120}}{_PROOF}|{_PROOF}.{{0,120}}{_EMAIL}", 3),
-    "messenger": (rf"{_CHAT}.{{0,120}}{_PROOF}|{_PROOF}.{{0,120}}{_CHAT}", 3),
+    "email": (rf"{_EMAIL}.{{0,90}}{_PROOF}|{_PROOF}.{{0,90}}{_EMAIL}", 3),
+    "messenger": (rf"{_CHAT}.{{0,100}}{_PROOF}|{_PROOF}.{{0,100}}{_CHAT}", 3),
     "order_no": (rf"order (number|no\b|#|id)[^.]{{0,100}}{_PROOF}|{_PROOF}[^.]{{0,100}}order (number|no\b|#|id)", 2),
     "before_dispatch": (rf"{_PROOF}[^.]{{0,100}}(before|prior to|until)[^.]{{0,40}}(ship|dispatch|process|pack|deliver)|(before|prior to)[^.]{{0,40}}(ship|dispatch|process|pack)[^.]{{0,80}}{_PROOF}|(ship|dispatch|process|pack)[^.]{{0,40}}(after|once|when)[^.]{{0,40}}(payment|{_PROOF})[^.]{{0,30}}(verif|confirm|cleared)", 2),
     "deadline": (rf"(within|in) (\d+|one|two|a) ?(hours?|hrs?|days?)[^.]{{0,100}}{_PROOF}|{_PROOF}[^.]{{0,100}}(within|in) (\d+|one|two|a) ?(hours?|hrs?|days?)|(auto-?cancel|will be cancel)", 2),
@@ -463,19 +463,19 @@ def _pain(p):
 def where_proof(p):
     pain = _pain(p)
     if "email" in pain and "messenger" in pain:
-        return "by email or Messenger"
-    return "by email" if "email" in pain else "through Messenger" if "messenger" in pain else "by hand"
+        return "by email or social media message"
+    return "by email" if "email" in pain else "through social media messages" if "messenger" in pain else "by hand"
 
 
 def observation(p, name):
     """The opening line. It states only what the shop's own pages showed; with nothing specific it stays general."""
     pain, methods = _pain(p), human_methods(p)
     if "email" in pain and "messenger" in pain:
-        return f"I noticed {name} asks customers to send their payment proof by email or Messenger after they order."
+        return f"I noticed {name} asks customers to send their payment proof by email or social media message after they order."
     if "email" in pain:
         return f"I noticed {name} asks customers to email their payment proof after they place an order."
     if "messenger" in pain:
-        return f"I noticed {name} takes {methods} and customers send their payment proof through Messenger."
+        return f"I noticed {name} takes {methods} and customers send their payment proof through social media messages."
     if (p["pay_level"] if "pay_level" in p.keys() else "") == "proof":
         return f"I noticed {name} takes {methods} and asks customers for proof of payment."
     return f"I noticed {name} takes {methods}, so you probably get payment receipts by email, Messenger or Viber and match them to orders by hand."
@@ -484,7 +484,7 @@ def observation(p, name):
 def pain_sentence(p):
     base = "The catch is that the receipt arrives separately from the Shopify order, so someone has to work out which order it belongs to."
     if "messenger" in _pain(p):
-        base += " Messenger is great for talking to customers, but it is not the best place to keep payment receipts."
+        base += " Chat is great for talking to customers, but it is not the best place to keep payment receipts."
     return base
 
 

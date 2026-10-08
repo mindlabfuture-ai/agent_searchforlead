@@ -12,7 +12,7 @@ STYLE = ("<style>body{font-family:system-ui;max-width:900px;margin:1rem auto;pad
          "nav a{margin-right:12px}</style>")
 FILTERS = [("verified", "Ready to approve"), ("needs_email", "Needs an email"), ("approved", "In the sequence"),
            ("rejected", "Rejected"), ("new", "Not checked yet"), ("all", "All")]
-PAIN_NAMES = {"email": "by email", "messenger": "via Messenger/chat", "order_no": "order number needed", "before_dispatch": "checked before dispatch", "deadline": "payment deadline"}
+PAIN_NAMES = {"email": "by email", "messenger": "via chat / social media", "order_no": "order number needed", "before_dispatch": "checked before dispatch", "deadline": "payment deadline"}
 
 
 def PAIN_LABEL(pain):
