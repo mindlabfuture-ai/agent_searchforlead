@@ -58,3 +58,19 @@ DB_PATH = os.environ.get("LEADS_DB", "data/leads.db")
 
 def env(name, default=""):
     return os.environ.get(name, default)
+
+
+def env_int(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+def base_url():
+    """Public URL of this service, used in unsubscribe links."""
+    if env("BASE_URL"):
+        return env("BASE_URL").rstrip("/")
+    if env("RAILWAY_PUBLIC_DOMAIN"):
+        return "https://" + env("RAILWAY_PUBLIC_DOMAIN")
+    return ""

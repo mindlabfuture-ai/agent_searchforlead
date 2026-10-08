@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, outreach, scoring, search, shopify_check
+from . import config, db, dedupe, emailing, pipeline, search
 
 
 def load_env():
@@ -56,35 +56,42 @@ def cmd_merge(a, con):
 
 
 def cmd_check(a, con):
-    rows = con.execute("SELECT * FROM leads WHERE shopify_status='unchecked' AND status='new'").fetchall()
-    for r in rows:
-        s = shopify_check.check_website(r["website"], platform=r["platform"])
-        con.execute("UPDATE leads SET shopify_status=?, updated_at=? WHERE id=?", (s, db.now(), r["id"]))
-        print(f"{s:<17} [{r['platform']}] {r['name'] or r['url']}")
-    con.commit()
+    pipeline.check_all(con)
 
 
 def cmd_score(a, con):
-    for r in con.execute("SELECT * FROM leads WHERE status IN ('new','qualified')").fetchall():
-        sc, notes = scoring.score_lead(r)
-        st = "qualified" if sc >= scoring.QUALIFY_AT else "new"
-        con.execute("UPDATE leads SET score=?, score_notes=?, status=?, updated_at=? WHERE id=?",
-                    (sc, notes, st, db.now(), r["id"]))
-    con.commit()
-    print(con.execute("SELECT COUNT(*) FROM leads WHERE status='qualified'").fetchone()[0], "qualified")
+    print(pipeline.score_all(con), "qualified")
 
 
 def cmd_draft(a, con):
-    for r in con.execute("SELECT * FROM leads WHERE status='qualified' ORDER BY score DESC LIMIT ?", (a.limit,)):
-        con.execute("UPDATE leads SET draft=?, status='drafted', updated_at=? WHERE id=?",
-                    (outreach.draft(r), db.now(), r["id"]))
-    con.commit()
+    pipeline.draft_n(con, a.limit)
     print("drafted; run `export` to review")
+
+
+def cmd_set_email(a, con):
+    found = emailing.extract_emails(a.email)
+    if not found:
+        raise SystemExit("not a usable business email address")
+    con.execute("UPDATE leads SET email=?, email_source='added manually' WHERE id=?", (found[0], a.id))
+    con.commit()
+    print(f"lead #{a.id} email set to {found[0]}")
+
+
+def cmd_send(a, con):
+    """Send approved emails (dry run unless EMAIL_SENDING_ENABLED=true). Approve leads in the dashboard first."""
+    n = emailing.run_sender(con, force=a.force)
+    live = config.env("EMAIL_SENDING_ENABLED").lower() == "true"
+    print(n, "sent" if live else "(dry run: nothing sent)")
+
+
+def cmd_serve(a, con):
+    from . import server
+    server.serve()
 
 
 def cmd_export(a, con):
     rows = con.execute("SELECT * FROM leads WHERE score>0 AND status!='merged' ORDER BY score DESC").fetchall()
-    cols = ["score", "status", "platform", "name", "url", "also_on", "website", "shopify_status", "score_notes", "draft"]
+    cols = ["score", "status", "platform", "name", "url", "email", "also_on", "website", "shopify_status", "score_notes", "draft"]
     w = csv.writer(open(a.out, "w", newline="", encoding="utf-8"))
     w.writerow(cols)
     w.writerows([[r[c] for c in cols] for r in rows])
@@ -95,6 +102,9 @@ def cmd_mark(a, con):
     url = db.normalize(a.url)[1] or a.url
     if a.status == "do_not_contact":
         db.add_do_not_contact(con, url, a.reason)
+        row = con.execute("SELECT email FROM leads WHERE url=?", (url,)).fetchone()
+        if row and row["email"]:
+            emailing.suppress(con, row["email"], a.reason or "marked do not contact")
     else:
         con.execute("UPDATE leads SET status=?, updated_at=? WHERE url=?", (a.status, db.now(), url))
         con.commit()
@@ -116,6 +126,11 @@ def main(argv=None):
     s = sub.add_parser("merge", help="manually merge leads by id (see `dedupe` review lines)")
     s.add_argument("ids", type=int, nargs="+"); s.set_defaults(f=cmd_merge)
     sub.add_parser("check").set_defaults(f=cmd_check)
+    s = sub.add_parser("set-email", help="record a publicly listed business email for a lead")
+    s.add_argument("id", type=int); s.add_argument("email"); s.set_defaults(f=cmd_set_email)
+    s = sub.add_parser("send", help="send approved emails now (daily cap applies; dry run unless enabled)")
+    s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_send)
+    sub.add_parser("serve", help="run the dashboard + scheduler (Railway)").set_defaults(f=cmd_serve)
     sub.add_parser("score").set_defaults(f=cmd_score)
     s = sub.add_parser("draft"); s.add_argument("--limit", type=int, default=25); s.set_defaults(f=cmd_draft)
     s = sub.add_parser("export"); s.add_argument("--out", default="data/leads.csv"); s.set_defaults(f=cmd_export)

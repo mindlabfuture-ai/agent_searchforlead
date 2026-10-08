@@ -23,16 +23,21 @@ def fetch(url, timeout=15):
 
 def check_website(website, fetch_fn=fetch, platform="facebook"):
     """Returns has_shopify | no_store | marketplace_only | unknown."""
+    return inspect_website(website, fetch_fn, platform)[0]
+
+
+def inspect_website(website, fetch_fn=fetch, platform="facebook"):
+    """Returns (status, html). html is "" when nothing was fetched."""
     if not website:
         # Nothing linked. On a marketplace that means they only sell there; elsewhere, social-only.
         # Either way, verify by eye before outreach.
-        return "marketplace_only" if platform in MARKETPLACE_PLATFORMS else "no_store"
+        return ("marketplace_only" if platform in MARKETPLACE_PLATFORMS else "no_store"), ""
     if any(m in website.lower() for m in MARKETPLACES):
-        return "marketplace_only"
+        return "marketplace_only", ""
     if not re.match(r"https?://", website):
         website = "https://" + website
     try:
         html, headers = fetch_fn(website)
     except (urllib.error.URLError, OSError, ValueError):
-        return "unknown"
-    return classify_html(html, headers)
+        return "unknown", ""
+    return classify_html(html, headers), html

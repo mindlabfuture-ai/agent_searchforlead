@@ -11,7 +11,7 @@ from . import config, db
 
 # Higher = further along the pipeline. The most advanced row is kept as the primary.
 STATUS_RANK = {s: i for i, s in enumerate(
-    ["new", "qualified", "drafted", "contacted", "replied", "lost", "won", "do_not_contact"])}
+    ["new", "qualified", "drafted", "approved", "contacted", "replied", "lost", "won", "do_not_contact"])}
 # Which store verdict survives a merge. has_shopify must win: one Shopify store disqualifies the business.
 SHOPIFY_RANK = {"has_shopify": 5, "unknown": 4, "marketplace_only": 3, "no_store": 2, "unchecked": 1}
 
@@ -128,8 +128,10 @@ def merge_rows(con, rows):
     if status == "qualified":
         status = "new"  # re-evaluate with the combined evidence
     t = db.now()
-    con.execute("UPDATE leads SET snippet=?, website=?, also_on=?, shopify_status=?, status=?, updated_at=? WHERE id=?",
-                (" | ".join(snippets), website, "; ".join(also), verdict, status, t, primary["id"]))
+    donor = next((r for r in [primary] + others if r["email"]), None)
+    con.execute("UPDATE leads SET snippet=?, website=?, also_on=?, shopify_status=?, status=?, email=?, email_source=?, updated_at=? WHERE id=?",
+                (" | ".join(snippets), website, "; ".join(also), verdict, status,
+                 donor["email"] if donor else None, donor["email_source"] if donor else None, t, primary["id"]))
     for r in others:
         con.execute("UPDATE leads SET status='merged', merged_into=?, score=0, updated_at=? WHERE id=?",
                     (primary["id"], t, r["id"]))
