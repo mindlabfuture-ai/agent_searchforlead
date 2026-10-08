@@ -36,5 +36,5 @@ Before transferring: no real transactions can run on a transfer store, the onlin
 ## No guarantee
 The offer has no money-back guarantee. The merchant gets a free build and early access to POPLoad, and pays only Shopify (their plan) and any domain. Your cost per store is build time, so time-box it: one cloned template store, a fixed product limit, about 3 hours.
 
-## Growth follow-up (planned)
-Per store after handover: day 7 check POPLoad is working and the first payment-receipt flow has been tested; day 30 growth tips (product photos, Facebook/Instagram catalog links, GCash QR on the thank-you page) and a short review ask; day 80 a heads-up on the plan price and an upgrade or VIPriority suggestion where it fits (luxury items).
+## Growth follow-up (built)
+After handover, add the merchant under Clients in the dashboard. The service then sends a welcome on day 0, a POPLoad check on day 7, growth tips on day 30 and a next-step offer on day 60 (custom touches, automations, VIPriority early access, a 15-minute call). Keep the client's **POPLoad status** up to date there: it changes the welcome email and skips the day-7 check once they are using POPLoad. Replies come to support@mindlabfuture-ai.com, so answer them promptly: the follow-ups only work if a person responds. Details are in the README.

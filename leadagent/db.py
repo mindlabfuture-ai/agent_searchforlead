@@ -23,6 +23,19 @@ CREATE TABLE IF NOT EXISTS emails (
   resend_id TEXT, status TEXT,  -- sent | delivered | bounced | complained | failed
   error TEXT, sent_at TEXT
 );
+CREATE TABLE IF NOT EXISTS clients (  -- merchants whose store we built and handed over
+  id INTEGER PRIMARY KEY, lead_id INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, store_url TEXT,
+  handed_over_at TEXT,                         -- YYYY-MM-DD (Philippine date)
+  popload_status TEXT DEFAULT 'not_installed', -- not_installed | installed | active
+  status TEXT DEFAULT 'active',                -- active | paused | done
+  notes TEXT, created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS followups (         -- one row per scheduled email per client
+  id INTEGER PRIMARY KEY, client_id INTEGER NOT NULL, step TEXT NOT NULL, due_at TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',               -- pending | sent | skipped | failed
+  attempts INTEGER DEFAULT 0, sent_at TEXT, resend_id TEXT, note TEXT,
+  UNIQUE(client_id, step)
+);
 CREATE TABLE IF NOT EXISTS suppressed_emails (email TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """

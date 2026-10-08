@@ -2,7 +2,7 @@ import argparse
 import csv
 import sys
 
-from . import config, db, dedupe, emailing, importer, pipeline, search
+from . import config, db, dedupe, emailing, followups, importer, pipeline, search
 
 
 def load_env():
@@ -85,6 +85,27 @@ def cmd_send(a, con):
     print(n, "sent" if live else "(dry run: nothing sent)")
 
 
+def cmd_client_add(a, con):
+    cid, err = followups.add_client(con, a.name, a.email, a.store_url, a.handed_over, a.lead_id, a.popload)
+    if err:
+        raise SystemExit(f"could not add: {err}")
+    print(f"client #{cid} added; follow-ups scheduled")
+
+
+def cmd_client_list(a, con):
+    for c in con.execute("SELECT * FROM clients ORDER BY id"):
+        fu = ", ".join(f"{f['step']}={f['status']}@{f['due_at']}" for f in
+                       con.execute("SELECT * FROM followups WHERE client_id=? ORDER BY due_at", (c["id"],)))
+        print(f"#{c['id']} {c['name']} <{c['email']}> {c['status']} popload={c['popload_status']}  {fu}")
+
+
+def cmd_followups(a, con):
+    """Send follow-ups that are due (dry run unless EMAIL_SENDING_ENABLED=true)."""
+    n = followups.run(con, force=a.force)
+    live = config.env("EMAIL_SENDING_ENABLED").lower() == "true"
+    print(n, "sent" if live else "(dry run: nothing sent)")
+
+
 def cmd_serve(a, con):
     from . import server
     server.serve()
@@ -131,6 +152,14 @@ def main(argv=None):
     s.add_argument("id", type=int); s.add_argument("email"); s.set_defaults(f=cmd_set_email)
     s = sub.add_parser("send", help="send approved emails now (daily cap applies; dry run unless enabled)")
     s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_send)
+    s = sub.add_parser("client", help="clients whose store you handed over"); cs = s.add_subparsers(dest="sub", required=True)
+    s = cs.add_parser("add"); s.add_argument("name"); s.add_argument("email"); s.add_argument("--store-url", default="")
+    s.add_argument("--handed-over", help="YYYY-MM-DD, default today")
+    s.add_argument("--lead-id", type=int); s.add_argument("--popload", default="not_installed", choices=list(followups.POPLOAD_STATUSES))
+    s.set_defaults(f=cmd_client_add)
+    cs.add_parser("list").set_defaults(f=cmd_client_list)
+    s = sub.add_parser("followups", help="send due follow-ups now (dry run unless enabled)")
+    s.add_argument("--force", action="store_true", help="ignore the Mon-Fri 9-17 PHT window"); s.set_defaults(f=cmd_followups)
     sub.add_parser("serve", help="run the dashboard + scheduler (Railway)").set_defaults(f=cmd_serve)
     sub.add_parser("score").set_defaults(f=cmd_score)
     s = sub.add_parser("draft"); s.add_argument("--limit", type=int, default=25); s.set_defaults(f=cmd_draft)

@@ -55,45 +55,57 @@ class EmailTests(unittest.TestCase):
         self.assertNotIn("<img src=x", h); self.assertNotIn("onerror=alert(1)>", h)
         self.assertEqual(h.count("<img"), 1)                              # only the logo: no tracking pixels
         self.assertNotIn("<script", h)
-        self.assertIn("/unsubscribe?t=", h); self.assertIn("mailto:support@mindlabfuture-ai.com?subject=Free%20store%20preview", h)
+        self.assertIn("/unsubscribe?t=", h); self.assertIn("mailto:support@mindlabfuture-ai.com?subject=Libreng%20store%20preview%20para%20sa", h)
         self.assertEqual(m["subject"].count("\n"), 0); self.assertLessEqual(len(m["subject"]), 100)
-        self.assertIn("Unsubscribe", h); self.assertIn("Taguig", h)
+        self.assertTrue(m["subject"].startswith("Simpleng online store para sa "))
+        self.assertIn("Unsubscribe", h); self.assertIn("Taguig", h); self.assertIn('<html lang="tl">', h)
         self.assertGreater(len(m["text"]), 200)                           # plain-text part is still there
 
-    def test_marketplace_and_taglish_variants_render(self):
+    def test_one_taglish_version_for_every_lead(self):
+        """English-looking and Taglish-looking leads get the same email: no separate English version."""
+        con = mem(); a = lead(con, "glowph", name="Glow PH")
+        con.execute("UPDATE leads SET snippet='Skincare Manila. Order now, GCash, COD'")
+        a = con.execute("SELECT * FROM leads").fetchone()
+        con2 = mem(); lead(con2, "glowph", name="Glow PH"); con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
+        b = con2.execute("SELECT * FROM leads").fetchone()
+        ma, mb = emailing.build_email(a, config.base_url()), emailing.build_email(b, config.base_url())
+        strip = lambda m: m["text"].split("--\n")[0]
+        self.assertEqual(strip(ma), strip(mb)); self.assertEqual(ma["subject"], mb["subject"])
+        for part in (ma["text"], plain(ma["html"])):
+            for english in ("I design and set up your store", "Would you like", "Get my free store preview", "You're getting this",
+                            "A simple online store for", "Just reply to this email", "Unsubscribe or just reply"):
+                self.assertNotIn(english, part)
+        self.assertIn("Hi po Glow PH team,", ma["text"]); self.assertIn("Natanggap ninyo ang one-time na mensaheng ito", ma["text"])
+        self.assertIn("(o mag-reply lang ng STOP)", ma["text"]); self.assertIn("o mag-reply lang ng STOP", ma["html"])
+
+    def test_missing_name_falls_back_cleanly(self):
+        con = mem(); lead(con, "noname", name=""); con.execute("UPDATE leads SET name=''")
+        m = emailing.build_email(con.execute("SELECT * FROM leads").fetchone(), config.base_url())
+        self.assertIn("Hi po Shop Owner team,", m["text"]); self.assertEqual(m["subject"], "Simpleng online store para sa Shop Owner")
+
+    def test_marketplace_seller_gets_the_callout(self):
         con = mem(); l = lead(con, "kapeng", name="Kapeng Bukid")
-        con.execute("UPDATE leads SET platform='shopee', url='https://shopee.ph/kapeng', snippet='available po, mga kape po'")
+        con.execute("UPDATE leads SET platform='shopee', url='https://shopee.ph/kapeng'")
         m = emailing.build_email(con.execute("SELECT * FROM leads").fetchone(), config.base_url())
         self.assertIn("Gusto ko ng libreng preview", m["html"]); self.assertIn("marketplace fees", m["html"])
+        self.assertIn("Nakita ko po ang Shopee shop ninyo (https://shopee.ph/kapeng)", m["text"])
         self.assertIn("border-left:3px solid", m["html"])                  # shown as a callout, not buried in the pitch
         self.assertEqual(m["html"].count("marketplace fees"), 1)
 
-    def test_offer_is_in_text_and_html_in_both_languages(self):
-        con = mem(); l = lead(con, "glowph"); cfg = config.base_url()
-        en = emailing.build_email(l, cfg)
-        for needle in ("Free store build: I design and set up your store, then hand it over so you own the store and the account",
-                       "Early access to POPLoad: my payment-receipt app (now in Shopify's review)", "Basic plan, up to 50 uploads",
-                       "you choose and pay for your plan directly"):
-            self.assertIn(needle, en["text"]); self.assertIn(needle, plain(en["html"]))
-        self.assertIn("border:1px solid #E3B965", en["html"])               # offer card
-        self.assertEqual(en["html"].count("&#10003;"), 3)
-        con2 = mem(); t = lead(con2, "kapeng", name="Kapeng")
-        con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
-        tl = emailing.build_email(con2.execute("SELECT * FROM leads").fetchone(), cfg)
+    def test_offer_is_in_text_and_html(self):
+        con = mem(); m = emailing.build_email(lead(con, "glowph"), config.base_url())
         for needle in ("Libreng store build: ako po ang magdidisenyo", "Maagang access sa POPLoad", "nasa review pa ng Shopify",
                        "hanggang 50 uploads", "kayo po ang pipili at magbabayad ng plan"):
-            self.assertIn(needle, tl["text"]); self.assertIn(needle, plain(tl["html"]))
-        self.assertIn("Libreng Shopify store build", tl["html"])             # preheader follows the language
-        self.assertIn("early access to POPLoad", en["html"])
+            self.assertIn(needle, m["text"]); self.assertIn(needle, plain(m["html"]))
+        self.assertIn("border:1px solid #E3B965", m["html"])               # offer card
+        self.assertEqual(m["html"].count("&#10003;"), 3)
+        self.assertIn("Libreng Shopify store build", m["html"])             # preheader
 
     def test_no_guarantee_or_refund_is_offered(self):
-        con = mem(); en = emailing.build_email(lead(con, "glowph"), config.base_url())
-        con2 = mem(); lead(con2, "kapeng", name="Kapeng"); con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
-        tl = emailing.build_email(con2.execute("SELECT * FROM leads").fetchone(), config.base_url())
-        for m in (en, tl):
-            for part in (m["text"], plain(m["html"]), m["html"]):
-                for banned in ("guarantee", "refund", "money-back", "₱1,000", "\u20b11,000", "ire-refund"):
-                    self.assertNotIn(banned, part.lower())
+        con = mem(); m = emailing.build_email(lead(con, "glowph"), config.base_url())
+        for part in (m["text"], plain(m["html"]), m["html"]):
+            for banned in ("guarantee", "refund", "money-back", "₱1,000", "\u20b11,000", "ire-refund"):
+                self.assertNotIn(banned, part.lower())
 
     def test_no_promo_claim_because_transferred_stores_are_not_eligible(self):
         con = mem(); l = lead(con, "glowph"); m = emailing.build_email(l, config.base_url())
@@ -101,32 +113,24 @@ class EmailTests(unittest.TestCase):
             for banned in ("$1/month", "$1/buwan", "new-store deal", "3 days free", "free trial"):
                 self.assertNotIn(banned, part)
 
-    def test_partner_referral_is_disclosed_in_both_languages(self):
-        con = mem(); en = emailing.build_email(lead(con, "glowph"), config.base_url())
-        self.assertIn("as a Shopify Partner I may earn a referral fee from Shopify when you subscribe. It costs you nothing extra.", en["text"])
-        self.assertIn("referral fee", plain(en["html"]))
-        con2 = mem(); lead(con2, "kapeng", name="Kapeng"); con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
-        tl = emailing.build_email(con2.execute("SELECT * FROM leads").fetchone(), config.base_url())
-        self.assertIn("maaari po akong makatanggap ng referral fee mula sa Shopify", tl["text"]); self.assertIn("referral fee", plain(tl["html"]))
-        self.assertEqual(plain(en["html"]).count("referral fee"), 1)         # shown once, not duplicated
+    def test_partner_referral_is_disclosed(self):
+        con = mem(); m = emailing.build_email(lead(con, "glowph"), config.base_url())
+        self.assertIn("bilang Shopify Partner, maaari po akong makatanggap ng referral fee mula sa Shopify kapag nag-subscribe kayo", m["text"])
+        self.assertEqual(plain(m["html"]).count("referral fee"), 1)         # shown once, not duplicated
 
-    def test_domain_note_is_shown_in_both_parts_and_languages(self):
-        con = mem(); l = lead(con, "glowph"); en = emailing.build_email(l, config.base_url())
-        for needle in ("your own domain name (like yourshop.com) isn't included", "subdomain such as yourshop.mindlabfuture-ai.com",
-                       "switch to your own domain anytime"):
-            self.assertIn(needle, en["text"]); self.assertIn(needle, plain(en["html"]))
-        self.assertEqual(en["html"].count("&#10003;"), 3)                  # the note is not a fourth checked perk
-        self.assertLess(en["text"].index("Your Shopify plan"), en["text"].index("Note: your own domain"))
-        self.assertLess(en["text"].index("Note: your own domain"), en["text"].index("Would you like"))
-        con2 = mem(); lead(con2, "kapeng", name="Kapeng"); con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
-        tl = emailing.build_email(con2.execute("SELECT * FROM leads").fetchone(), config.base_url())
-        for needle in ("hindi po kasama ang sariling domain name", "subdomain tulad ng yourshop.mindlabfuture-ai.com"):
-            self.assertIn(needle, tl["text"]); self.assertIn(needle, plain(tl["html"]))
+    def test_domain_note_is_shown_in_both_parts(self):
+        con = mem(); m = emailing.build_email(lead(con, "glowph"), config.base_url())
+        for needle in ("hindi po kasama ang sariling domain name", "subdomain tulad ng yourshop.mindlabfuture-ai.com",
+                       "lumipat sa sariling domain anumang oras"):
+            self.assertIn(needle, m["text"]); self.assertIn(needle, plain(m["html"]))
+        self.assertEqual(m["html"].count("&#10003;"), 3)                  # the note is not a fourth checked perk
+        self.assertLess(m["text"].index("Shopify plan ninyo"), m["text"].index("Note: hindi po kasama"))
+        self.assertLess(m["text"].index("Note: hindi po kasama"), m["text"].index("Gusto po ba ninyong makita"))
 
     def test_offer_survives_marketplace_variant(self):
         con = mem(); l = lead(con, "k"); con.execute("UPDATE leads SET platform='shopee', url='https://shopee.ph/k'")
         m = emailing.build_email(con.execute("SELECT * FROM leads").fetchone(), config.base_url())
-        self.assertIn("Early access to POPLoad", m["html"]); self.assertEqual(m["html"].count("&#10003;"), 3)
+        self.assertIn("Maagang access sa POPLoad", m["html"]); self.assertEqual(m["html"].count("&#10003;"), 3)
         self.assertIn("marketplace fees", m["html"])
 
     def test_logo_url_can_be_overridden(self):
