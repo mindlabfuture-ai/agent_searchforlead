@@ -69,33 +69,33 @@ class ScheduleTests(unittest.TestCase):
 
 @mock.patch.dict(os.environ, ENV)
 class MessageTests(unittest.TestCase):
-    def test_every_step_is_branded_taglish_compliant_and_clean(self):
+    def test_every_step_is_branded_english_compliant_and_clean(self):
         con = mem()
         cid = client(con, name="Kapeng Bukid", email="kapeng@shop.ph", popload_status="installed")
         c = con.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone()
         for step, _ in followups.STEPS:
             m = followups.build_followup(c, step, config.base_url()); h = m["html"]
-            for brand in ("#060A12", "#E3B965", "Space Grotesk", "mindlabfuture-ai.com/img/logo-ml.png", '<html lang="tl">'):
+            for brand in ("#060A12", "#E3B965", "Space Grotesk", "mindlabfuture-ai.com/img/logo-ml.png", '<html lang="en">'):
                 self.assertIn(brand, h)
             self.assertIn("/unsubscribe?t=", h); self.assertIn("/unsubscribe?t=", m["text"])
             self.assertEqual(m["headers"]["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
             self.assertEqual(h.count("<img"), 1); self.assertNotIn("<script", h)
-            self.assertIn("ang MindLab Future AI ang gumawa ng Shopify store ninyo", m["text"])
-            self.assertNotIn("publicly listed", m["text"]); self.assertNotIn("naka-list sa publiko", m["text"])
-            self.assertIn("Hi po Kapeng Bukid team,", m["text"]); self.assertIn("1. ", m["text"]); self.assertIn("Taguig", m["text"])
-            self.assertIn("(o mag-reply lang ng STOP)", m["text"]); self.assertIn("o mag-reply lang ng STOP", h)
+            self.assertIn("You're getting this because MindLab Future AI built your Shopify store.", m["text"])
+            self.assertNotIn("publicly listed", m["text"])
+            self.assertIn("Hi Kapeng Bukid team,", m["text"]); self.assertIn("1. ", m["text"]); self.assertIn("Taguig", m["text"])
+            self.assertIn("(or just reply STOP)", m["text"]); self.assertIn("or just reply STOP", h)
             self.assertTrue(m["subject"] in plain(h) and m["subject"])
             for part in (m["text"], plain(h)):
-                for banned in ("$1/", "guarantee", "refund", "free trial", "₱1,000", "You're getting", "Not interested", "Just reply to this email"):
+                for banned in ("$1/", "guarantee", "refund", "free trial", "₱1,000", "Natanggap", "ninyo", "Hi po", "Mag-reply", "Ayaw na po"):
                     self.assertNotIn(banned, part)
 
     def test_welcome_depends_on_popload_status(self):
         con = mem()
         a = con.execute("SELECT * FROM clients WHERE id=?", (client(con, email="a@shop.ph", popload_status="not_installed"),)).fetchone()
         b = con.execute("SELECT * FROM clients WHERE id=?", (client(con, email="b@shop.ph", popload_status="installed"),)).fetchone()
-        self.assertIn("Mag-reply lang ng POPLOAD", followups.build_followup(a, "welcome", config.base_url())["text"])
+        self.assertIn("Reply POPLOAD", followups.build_followup(a, "welcome", config.base_url())["text"])
         t = followups.build_followup(b, "welcome", config.base_url())["text"]
-        self.assertIn("Ilagay ang payment details", t); self.assertNotIn("Mag-reply lang ng POPLOAD", t)
+        self.assertIn("Add your payment details", t); self.assertNotIn("Reply POPLOAD", t)
 
     def test_hostile_name_and_store_are_escaped_or_flattened(self):
         con = mem(); cid = client(con, name='Glow <img src=x onerror=alert(1)>\n\nPH', store_url="https://a.ph/?x=<b>")
@@ -103,10 +103,15 @@ class MessageTests(unittest.TestCase):
         m = followups.build_followup(c, "welcome", config.base_url())
         self.assertNotIn("<img src=x", m["html"]); self.assertNotIn("<b>", m["html"]); self.assertEqual(m["html"].count("<img"), 1)
 
+    def test_missing_name_greets_generically(self):
+        con = mem(); cid = client(con); con.execute("UPDATE clients SET name=''")
+        t = followups.build_followup(con.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone(), "welcome", config.base_url())["text"]
+        self.assertTrue(t.startswith("Hi there,\n"))
+
     def test_no_store_link_reads_cleanly(self):
         con = mem(); cid = client(con, store_url="")
         t = followups.build_followup(con.execute("SELECT * FROM clients WHERE id=?", (cid,)).fetchone(), "welcome", config.base_url())["text"]
-        self.assertIn("Sa inyo na ang Shopify store ninyo. Ito po", t)
+        self.assertIn("is now yours. Here is how", t)
 
 
 @mock.patch.dict(os.environ, ENV)
