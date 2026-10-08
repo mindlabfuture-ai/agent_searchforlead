@@ -123,6 +123,22 @@ def render_followup(*, subject, preheader, greeting, intro, list_title, items, c
     return _page(subject, preheader, main, signature, E(why), company, address, unsub_url, logo_url, site_url)
 
 
+def render_showcase(*, subject, preheader, greeting, intro, mockup_html, notes, closing, disclosure, cta_label, cta_mailto,
+                    signature, unsub_url, why, company, address, logo_url=LOGO_URL, site_url=SITE_URL):
+    """The 7-day follow-up: a short note, the store mockup (already-escaped HTML from previews.render_mockup),
+    what the mockup is based on, and one button."""
+    rows = "".join(f'<tr><td width="18" valign="top" style="padding:0 0 6px;font-family:{BODY};font-size:13px;color:{BRASS}">&#9670;</td>'
+                   f'<td style="padding:0 0 6px;font-family:{BODY};font-size:13px;line-height:1.5;color:{MUTED}">{E(n)}</td></tr>' for n in notes)
+    main = f"""<h1 class="h1" style="margin:0 0 20px;font-family:{HEAD};font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-0.02em;color:{TEXT}">{E(subject)}</h1>
+{_p(greeting)}{_p(intro)}{mockup_html}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px"><tr><td style="font-family:{HEAD};font-size:14px;font-weight:600;color:{TEXT};padding-bottom:8px">What you're seeing</td></tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px">{rows}</table>
+{_p(closing)}
+{_button(cta_label, cta_mailto)}
+{_p(disclosure, MUTED, 13)}"""
+    return _page(subject, preheader, main, signature, E(why), company, address, unsub_url, logo_url, site_url)
+
+
 def cta_mailto(reply_to, name):
     subject = "Free store preview for " + name
     return f"mailto:{reply_to}?subject={quote(subject)}"

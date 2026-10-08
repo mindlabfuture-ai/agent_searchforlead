@@ -5,13 +5,14 @@ import hashlib
 import hmac
 import html
 import json
+import re
 import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline
+from . import config, db, dedupe, emailing, followups, importer, pipeline, previews, previewui, showcase
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -72,7 +73,7 @@ def render_dashboard(con):
                                      f"<input type=hidden name=csrf value={csrf_token()}><input type=hidden name=id value={r['id']}>"
                                      f"<button name=action value={action}>{label}</button></form>")
         approve = btn("approve", "Approve email") if r["email"] and r["status"] != "approved" else ""
-        cards.append(f"""<section><h3>{E(r['name'] or r['url'])} <small>#{r['id']} &middot; {E(r['platform'])} &middot; score {r['score']} &middot; {E(r['status'])}</small></h3>
+        cards.append(f"""<section><h3>{E(r['name'] or r['url'])} <small>#{r['id']} &middot; {E(r['platform'])} &middot; score {r['score']} &middot; {E(r['status'])} &middot; <a href='/previews/{r['id']}'>Preview</a></small></h3>
 <a href="{E(r['url'])}" rel="noopener noreferrer" target=_blank>{E(r['url'])}</a>
 <p>{E(r['score_notes'])}</p><p>Also on: {E(r['also_on'])}</p>
 <p>Email: <b>{E(r['email'] or 'none')}</b> <small>{E(r['email_source'])}</small></p>
@@ -86,7 +87,7 @@ def render_dashboard(con):
             f"<title>Lead queue</title><style>body{{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}}"
             f"section{{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}}pre{{white-space:pre-wrap}}"
             f".b{{background:{'#fde' if sending else '#ffd'};padding:8px;border-radius:6px}}button{{margin:2px}}</style>"
-            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
 
 
 def render_clients_page(con, message=""):
@@ -168,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; frame-src 'self'; form-action 'self'")
         self.send_header("X-Frame-Options", "DENY")
         for k, v in headers:
             self.send_header(k, v)
@@ -188,6 +189,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         return self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 1_000_000))
+
+    def _preview_page(self, con, lead_id, message=""):
+        page = previewui.render_editor(con, lead_id, csrf_token(), message)
+        return self._send(200, page) if page else self._send(404, "Unknown lead", "text/plain")
+
+    def _post_preview_save(self, lead_id):
+        """Multipart upload. Login is checked before the body is read, and the size is capped."""
+        if not self._authed():
+            return
+        ctype, n = self.headers.get("Content-Type", ""), int(self.headers.get("Content-Length") or 0)
+        if not ctype.startswith("multipart/form-data"):
+            return self._send(400, "expected a form upload", "text/plain")
+        if n > previewui.MAX_FORM_BYTES:
+            return self._send(413, "That upload is too large (20 MB in total).", "text/plain")
+        fields, files = previewui.parse_multipart(ctype, self.rfile.read(n))
+        if not hmac.compare_digest(fields.get("csrf", ""), csrf_token()):
+            return self._send(403, "bad csrf token", "text/plain")
+        con = db.connect(config.DB_PATH)
+        self._preview_page(con, lead_id, previewui.save_from_form(con, lead_id, fields, files))
 
     def do_GET(self):
         u = urlparse(self.path)
@@ -209,11 +229,42 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_import_page())
         if u.path == "/clients" and self._authed():
             return self._send(200, render_clients_page(db.connect(config.DB_PATH)))
+        m = re.fullmatch(r"/i/([\w.]+)", u.path)
+        if m:  # signed, unlisted image for the showcase email; never logged
+            img = previews.image_from_token(db.connect(config.DB_PATH), m.group(1)) if len(config.env("UNSUB_SECRET")) >= 16 else None
+            if not img:
+                return self._send(404, "Not found", "text/plain")
+            return self._send(200, img[1], img[0], headers=[("Cache-Control", "public, max-age=3600")])
+        if u.path == "/previews" and self._authed():
+            return self._send(200, previewui.render_list(db.connect(config.DB_PATH), csrf_token()))
+        if u.path == "/previews/open" and self._authed():
+            n = parse_qs(u.query).get("id", [""])[0].strip().lstrip("#")
+            return self._send(303, "", headers=[("Location", f"/previews/{n}" if n.isdigit() else "/previews")])
+        m = re.fullmatch(r"/previews/(\d+)", u.path)
+        if m and self._authed():
+            return self._preview_page(db.connect(config.DB_PATH), int(m.group(1)))
+        m = re.fullmatch(r"/previews/(\d+)/(theme\.json|logo\.svg)", u.path)
+        if m and self._authed():
+            con = db.connect(config.DB_PATH)
+            pv = previews.load(con, int(m.group(1)))
+            if not pv:
+                return self._send(404, "No preview yet", "text/plain")
+            if m.group(2) == "theme.json":
+                return self._send(200, json.dumps(previews.theme_settings(pv), indent=2), "application/json")
+            return self._send(200, previews.generated_logo_svg(pv["name"], pv["brand"]), "image/svg+xml",
+                              headers=[("Content-Disposition", "attachment; filename=logo.svg")])
+        m = re.fullmatch(r"/pimg/(\d+)/(\w+)", u.path)
+        if m and self._authed():  # your uploaded screenshots and photos, behind the login only
+            up = previews.get_uploads(db.connect(config.DB_PATH), int(m.group(1))).get(m.group(2))
+            return self._send(200, up[1], up[0]) if up else self._send(404, "Not found", "text/plain")
         if u.path != "/":
             self._send(404, "Not found", "text/plain")
 
     def do_POST(self):
         u = urlparse(self.path)
+        m = re.fullmatch(r"/previews/(\d+)/save", u.path)
+        if m:
+            return self._post_preview_save(int(m.group(1)))
         body = self._body()
         if u.path == "/unsubscribe":  # also the RFC 8058 one-click target
             email = emailing.parse_unsub_token(parse_qs(u.query).get("t", [""])[0])
@@ -261,6 +312,13 @@ class Handler(BaseHTTPRequestHandler):
             elif f.get("mode") == "action" and (f.get("client_id") or "").isdigit():
                 followups.apply_action(con, int(f["client_id"]), f.get("action", ""))
             return self._send(200, render_clients_page(con, message))
+        m = re.fullmatch(r"/previews/(\d+)/action", u.path)
+        if m and self._authed():
+            f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+            if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
+                return self._send(403, "bad csrf token", "text/plain")
+            con = db.connect(config.DB_PATH)
+            return self._preview_page(con, int(m.group(1)), previewui.apply_action(con, int(m.group(1)), f.get("action", "")))
         if u.path not in ("/action", "/import", "/clients"):
             self._send(404, "Not found", "text/plain")
 
@@ -276,9 +334,11 @@ def tick(log=print, stop=None):
         con.execute("INSERT OR REPLACE INTO meta VALUES ('last_pipeline', ?)", (today,))
         con.commit()
         pipeline.run_daily(con, log=log, today=pht.date())
+    showcase.prepare(con, log=log)  # builds previews a couple of days early; never approves or sends anything
     if config.env("EMAIL_SENDING_ENABLED").lower() == "true":
         wait = stop.wait if stop else time.sleep
         emailing.run_sender(con, log=log, sleep=wait)
+        showcase.run(con, log=log, sleep=wait)
         followups.run(con, log=log, sleep=wait)
 
 

@@ -21,7 +21,18 @@ CREATE TABLE IF NOT EXISTS do_not_contact (url TEXT PRIMARY KEY, reason TEXT, ad
 CREATE TABLE IF NOT EXISTS emails (
   id INTEGER PRIMARY KEY, lead_id INTEGER, to_email TEXT, subject TEXT,
   resend_id TEXT, status TEXT,  -- sent | delivered | bounced | complained | failed
-  error TEXT, sent_at TEXT
+  error TEXT, sent_at TEXT,
+  kind TEXT DEFAULT 'initial'   -- initial | showcase (the one follow-up, 7+ days after the first email)
+);
+CREATE TABLE IF NOT EXISTS previews (  -- a store preview built from a lead's public information
+  lead_id INTEGER PRIMARY KEY, profile TEXT NOT NULL,  -- JSON: brand colour, logo info, products, notes
+  status TEXT DEFAULT 'draft',                         -- draft | approved | sent | skipped
+  approved_at TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS preview_images (  -- the logo and up to 3 product photos, stored so they never hotlink
+  lead_id INTEGER NOT NULL, slot TEXT NOT NULL,        -- logo | p1 | p2 | p3
+  content_type TEXT, data BLOB, source_url TEXT,
+  PRIMARY KEY (lead_id, slot)
 );
 CREATE TABLE IF NOT EXISTS clients (  -- merchants whose store we built and handed over
   id INTEGER PRIMARY KEY, lead_id INTEGER, name TEXT NOT NULL, email TEXT NOT NULL, store_url TEXT,
@@ -112,6 +123,8 @@ def connect(path):
                      ("email", "TEXT"), ("email_source", "TEXT")):  # upgrade older DBs
         if col not in have:
             con.execute(f"ALTER TABLE leads ADD COLUMN {col} {ddl}")
+    if "kind" not in {r[1] for r in con.execute("PRAGMA table_info(emails)")}:
+        con.execute("ALTER TABLE emails ADD COLUMN kind TEXT DEFAULT 'initial'")
     con.commit()
     return con
 
