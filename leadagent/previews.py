@@ -443,6 +443,12 @@ def render_mockup(profile, base_url, lead_id, version):
                 f'<td width="34" height="34" align="center" bgcolor="{pal["brand"]}" style="width:34px;height:34px;border-radius:9px;background:{pal["brand"]};'
                 f'font-family:{body_font};font-size:15px;font-weight:700;color:{pal["on_brand"]}">{E(initials)}</td>'
                 f'<td style="padding-left:9px;font-family:{head_font};font-size:17px;font-weight:700;color:{pal["ink"]}">{E(name[:22])}</td></tr></table>')
+    soft = mix(profile["brand"], "#FFFFFF", 0.62)  # a product without a photo: a visible tile, not a near-white one
+    letter = profile["brand"]
+    for k in range(1, 9):
+        if contrast(letter, soft) >= 4.5:
+            break
+        letter = mix(profile["brand"], "#000000", k * 0.12)
     cards = []
     for n, p in enumerate(profile["products"][:MAX_PRODUCTS], 1):
         slot = f"p{p.get('slot', n)}"
@@ -450,8 +456,8 @@ def render_mockup(profile, base_url, lead_id, version):
             pic = (f'<img src="{E(image_url(base_url, lead_id, slot, version))}" alt="{E(p["name"])}" width="150" '
                    f'style="display:block;border:0;width:100%;max-width:150px;height:auto;border-radius:8px">')
         else:
-            pic = (f'<div style="height:110px;border-radius:8px;background:{pal["tint"]};text-align:center;line-height:110px;'
-                   f'font-family:{head_font};font-size:38px;font-weight:700;color:{pal["brand"]}">{E((p["name"] or "?")[0].upper())}</div>')
+            pic = (f'<div style="height:110px;border-radius:8px;background:{soft};text-align:center;line-height:110px;'
+                   f'font-family:{head_font};font-size:38px;font-weight:700;color:{letter}">{E((p["name"] or "?")[0].upper())}</div>')
         price = (f'<div style="font-family:{body_font};font-size:13px;color:{pal["muted"]};padding-top:2px">{E(p["price"])}{" (sample)" if p["sample"] and p["price"] else ""}</div>'
                  if p["price"] or p["sample"] else "")
         cards.append(

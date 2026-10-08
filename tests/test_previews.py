@@ -212,3 +212,13 @@ class UiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch.dict(os.environ, ENV)
+class MockupTileTests(unittest.TestCase):
+    def test_product_without_photo_gets_a_visible_tile(self):
+        con = mem(); lead = contacted_lead(con)
+        pv = previews.generate(con, lead, lambda u: None, lambda u: None, overrides={"brand": "#A7D8D3", "products": []})
+        html = previews.render_mockup(pv, "https://leads.example.app", lead["id"], 1)
+        soft = previews.mix("#A7D8D3", "#FFFFFF", 0.62)
+        self.assertIn(f"background:{soft}", html)
