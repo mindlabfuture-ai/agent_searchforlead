@@ -106,3 +106,22 @@ class ThemeRouteTests(PreviewServerTests):
         self.assertEqual((code, data[:2], headers["Content-Type"]), (200, b"PK", "application/zip"))
         self.assertIn(b"Handle,Title", self.call("/previews/1/products.csv")[1])
         self.assertIn(b"Setting up the", self.call("/previews/1/setup.md")[1])
+
+
+@mock.patch.dict(os.environ, ENV)
+class AssistantRouteTests(PreviewServerTests):
+    def test_assistant_page_and_actions(self):
+        self.assertEqual(self.call("/assistant", auth=False)[0], 401)
+        code, page, _ = self.call("/assistant"); self.assertEqual(code, 200); self.assertIn(b"Assistant", page)
+        import hashlib, hmac
+        csrf = hmac.new(config.env("ADMIN_PASSWORD").encode(), b"csrf", hashlib.sha256).hexdigest()
+        self.assertEqual(self.call("/assistant", b"mode=decide&id=1&choice=confirm&csrf=bad", "application/x-www-form-urlencoded")[0], 403)
+        from leadagent import assistant, popload
+        con = db.connect(config.DB_PATH)
+        popload.add_rows(con, [{"name": "A", "website": "a.ph"}]); con.execute("UPDATE prospects SET status='verified', email='a@a.ph'"); con.commit()
+        pid, _ = assistant.propose(con, "prospect_reject", {"id": 1}, "test")
+        code, page, _ = self.call("/assistant", f"mode=decide&id={pid}&choice=confirm&csrf={csrf}".encode(), "application/x-www-form-urlencoded")
+        self.assertEqual(code, 200); self.assertIn(b"Rejected", page)
+        self.assertEqual(db.connect(config.DB_PATH).execute("SELECT status FROM prospects").fetchone()[0], "rejected")
+        code, page, _ = self.call("/assistant", f"mode=ask&question=hi&csrf={csrf}".encode(), "application/x-www-form-urlencoded")
+        self.assertEqual(code, 200)

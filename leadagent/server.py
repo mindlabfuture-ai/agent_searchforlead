@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase, themezip
+from . import assistant, assistantchat, assistantui, config, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase, themezip
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -57,6 +57,8 @@ def render_import_page(results=None, truncated=False):
 
 
 def render_dashboard(con):
+    n_crit = assistantui.critical_count(con)
+    crit = f" <b style='color:#a00'>({n_crit} critical)</b>" if n_crit else ""
     sending = config.env("EMAIL_SENDING_ENABLED").lower() == "true"
     cap = config.env_int("EMAIL_DAILY_CAP", 20)
     banner = ("LIVE: approved emails are sent Mon-Fri 9-17 PHT" if sending
@@ -87,7 +89,7 @@ def render_dashboard(con):
             f"<title>Lead queue</title><style>body{{font-family:system-ui;max-width:860px;margin:1rem auto;padding:0 16px}}"
             f"section{{border:1px solid #ccc;border-radius:8px;padding:12px;margin:12px 0}}pre{{white-space:pre-wrap}}"
             f".b{{background:{'#fde' if sending else '#ffd'};padding:8px;border-radius:6px}}button{{margin:2px}}</style>"
-            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/prospects'>POPLoad prospects</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
+            f"<h1>Lead queue</h1><p><a href='/import'>+ Import leads</a> &middot; <a href='/previews'>Previews</a> &middot; <a href='/prospects'>POPLoad prospects</a> &middot; <a href='/assistant'>Assistant{crit}</a> &middot; <a href='/clients'>Clients</a></p><p class=b>{E(banner)}</p><p>{stats}</p>{''.join(cards) or '<p>No leads waiting.</p>'}")
 
 
 def render_clients_page(con, message=""):
@@ -227,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, render_dashboard(con))
         if u.path == "/import" and self._authed():
             return self._send(200, render_import_page())
+        if u.path == "/assistant" and self._authed():
+            return self._send(200, assistantui.render(db.connect(config.DB_PATH), csrf_token()))
         if u.path == "/prospects" and self._authed():
             show = parse_qs(u.query).get("show", ["verified"])[0]
             return self._send(200, poploadui.render_page(db.connect(config.DB_PATH), csrf_token(), show=show))
@@ -316,6 +320,18 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=lambda: pipeline.process_new(db.connect(config.DB_PATH), log=print),
                                  daemon=True).start()
             return self._send(200, render_import_page(results, truncated))
+        if u.path == "/assistant" and self._authed():
+            f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
+            if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
+                return self._send(403, "bad csrf token", "text/plain")
+            con = db.connect(config.DB_PATH)
+            message = answer = question = ""
+            if f.get("mode") == "decide" and (f.get("id") or "").isdigit():
+                message = assistant.decide(con, int(f["id"]), f.get("choice") == "confirm")
+            elif f.get("mode") == "ask":
+                question = f.get("question", "")
+                answer, message = assistantchat.ask(con, question)
+            return self._send(200, assistantui.render(con, csrf_token(), message, answer, question))
         if u.path == "/prospects" and self._authed():
             f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
             if not hmac.compare_digest(f.get("csrf", ""), csrf_token()):
@@ -352,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, "bad csrf token", "text/plain")
             con = db.connect(config.DB_PATH)
             return self._preview_page(con, int(m.group(1)), previewui.apply_action(con, int(m.group(1)), f.get("action", "")))
-        if u.path not in ("/action", "/import", "/clients", "/prospects"):
+        if u.path not in ("/action", "/import", "/clients", "/prospects", "/assistant"):
             self._send(404, "Not found", "text/plain")
 
 
@@ -367,6 +383,11 @@ def tick(log=print, stop=None):
         con.execute("INSERT OR REPLACE INTO meta VALUES ('last_pipeline', ?)", (today,))
         con.commit()
         pipeline.run_daily(con, log=log, today=pht.date())
+    if pht.hour >= config.env_int("BRIEF_HOUR_PHT", 8):
+        brief_day = con.execute("SELECT 1 FROM assistant_briefings WHERE day=?", (today,)).fetchone()
+        if not brief_day:
+            assistant.store_and_send(con, now, log=log)  # saves today's brief; emails it to OWNER_EMAIL if that is set
+    assistant.alert_critical(con, now, log=log)          # a new critical finding is emailed once a day at most
     popload.adopt_shopify_leads(con, log=log)  # Shopify stores found by the store-build search become POPLoad prospects
     if (config.env("SERPER_API_KEY") or config.env("BRAVE_API_KEY")) and pht.hour >= config.env_int("PIPELINE_HOUR_PHT", 7):
         seen = con.execute("SELECT value FROM meta WHERE key='last_discovery'").fetchone()

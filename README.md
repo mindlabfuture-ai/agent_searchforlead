@@ -118,6 +118,17 @@ To turn email on:
 3. Set `RESEND_API_KEY`, `SENDER_FROM_EMAIL`, `UNSUB_SECRET`, then `EMAIL_SENDING_ENABLED=true`. The service refuses to start live without them.
 4. Ramp slowly: start at `EMAIL_DAILY_CAP=5` for a week or two and check bounces and complaints before raising it.
 
+## The assistant (your right hand)
+
+Open **Assistant** in the dashboard (`/assistant`). It watches the whole system and tells you what needs you:
+- **Health**: missing or weak settings, bounce and spam-complaint rates against Resend's limits, failed sends, a silent Resend webhook, a stalled daily search, demo sites that cannot be taken down. Worst first; the lead queue shows a red count when something is critical.
+- **Needs you**: first emails and prospects waiting for approval, showcase previews to review, and a reminder to check your inbox for replies *before* a prospect's next email goes out (replies are not detected automatically; mark them).
+- **Daily brief**: saved every morning (08:00 PHT, `BRIEF_HOUR_PHT`) and emailed to `OWNER_EMAIL` if you set it, plus an email when a new critical problem appears (at most once a day each). It cannot report a total outage: use Railway's healthcheck plus an uptime monitor on `/health` for that.
+- **Suggestions**: things it thinks you should stop or tidy (reject a prospect, mark a reply, pause a client, take a demo down) wait for your **Confirm** click. Nothing runs before that.
+- **Chat** (needs `ANTHROPIC_API_KEY`; `ASSISTANT_MODEL`, default `claude-opus-5-5`; `ASSISTANT_DAILY_LIMIT` questions a day, default 60): ask "what should I do today?", "which prospects look strongest?", "why did sending stop?". It reads live data with tools, can suggest actions, and can run internal tidy-up tasks (verify prospects, adopt Shopify leads, build previews, health check).
+
+What it can never do, enforced in code and tests: approve a first email, a showcase email, a POPLoad sequence or a demo site, send anything to a lead, or publish. It can stop things; starting outreach stays yours, one by one. Text from leads and websites reaches the model only as tool data, and the worst it can lead to is a suggestion you can dismiss.
+
 ## POPLoad prospects (existing Shopify stores)
 
 A separate track for stores that already run on Shopify and take GCash or bank transfer, to offer POPLoad (customers upload the receipt, you approve it in one click). Open **POPLoad prospects** in the dashboard, or use `python -m leadagent prospects import FILE | verify | list | run`.

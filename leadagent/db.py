@@ -66,6 +66,14 @@ CREATE TABLE IF NOT EXISTS prospect_steps (  -- the POPLoad email sequence, one 
   attempts INTEGER DEFAULT 0, sent_at TEXT, resend_id TEXT, note TEXT,
   UNIQUE(prospect_id, step)
 );
+CREATE TABLE IF NOT EXISTS assistant_proposals (  -- things the assistant suggests; nothing runs until the owner confirms
+  id INTEGER PRIMARY KEY, created_at TEXT, action TEXT NOT NULL, args TEXT NOT NULL, summary TEXT, reason TEXT,
+  source TEXT DEFAULT 'chat',   -- chat | briefing
+  status TEXT DEFAULT 'pending',  -- pending | done | dismissed | failed
+  result TEXT, decided_at TEXT
+);
+CREATE TABLE IF NOT EXISTS assistant_briefings (day TEXT PRIMARY KEY, payload TEXT NOT NULL, emailed_at TEXT);
+CREATE TABLE IF NOT EXISTS assistant_chat (id INTEGER PRIMARY KEY, created_at TEXT, role TEXT, text TEXT);
 CREATE TABLE IF NOT EXISTS suppressed_emails (email TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
