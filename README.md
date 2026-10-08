@@ -118,6 +118,14 @@ To turn email on:
 3. Set `RESEND_API_KEY`, `SENDER_FROM_EMAIL`, `UNSUB_SECRET`, then `EMAIL_SENDING_ENABLED=true`. The service refuses to start live without them.
 4. Ramp slowly: start at `EMAIL_DAILY_CAP=5` for a week or two and check bounces and complaints before raising it.
 
+## POPLoad prospects (existing Shopify stores)
+
+A separate track for stores that already run on Shopify and take GCash or bank transfer, to offer POPLoad (customers upload the receipt, you approve it in one click). Open **POPLoad prospects** in the dashboard, or use `python -m leadagent prospects import FILE | verify | list | run`.
+
+1. **Import** a CSV (`Merchant Brand, Niche / Products, Platform / Domain, Manual Payment Instructions`, or name, niche, website, notes). Stores already in the store-build list are skipped.
+2. **Verification** reads each site's own pages (home, contact, payment, FAQ, refund policy): the domain must load, run on Shopify, show GCash/Maya/bank-transfer wording (ranked higher when it asks for proof of payment), and publish a business email. Emails come only from the site itself, never guessed. Lists written by an AI assistant often contain domains that do not exist; those are rejected here (the first list: 119 of 156 did not load).
+3. **Approve** each verified prospect yourself. Approval starts a 3-email sequence: day 0 intro, day 4 "how it works", day 11 last note. Same brand template, unsubscribe link, suppression, business hours and one-click `List-Unsubscribe`. A reply, unsubscribe or bounce stops the rest; mark replies with *They replied*. Cap: `PROSPECT_DAILY_CAP` (default 10). Dry run until `EMAIL_SENDING_ENABLED=true`.
+
 ## Store previews (the day-7 email)
 
 Seven days after the first email, a lead that has not replied can get one more email showing a mock-up of the store you would build for them. Nothing is sent until you approve it.

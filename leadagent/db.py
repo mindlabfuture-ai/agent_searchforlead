@@ -47,6 +47,20 @@ CREATE TABLE IF NOT EXISTS followups (         -- one row per scheduled email pe
   attempts INTEGER DEFAULT 0, sent_at TEXT, resend_id TEXT, note TEXT,
   UNIQUE(client_id, step)
 );
+CREATE TABLE IF NOT EXISTS prospects (  -- existing Shopify stores to offer POPLoad to (a separate track from store-build leads)
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, website TEXT NOT NULL, domain TEXT UNIQUE NOT NULL, niche TEXT, claim TEXT,
+  platform TEXT DEFAULT 'unchecked',    -- unchecked | has_shopify | no_store | unreachable
+  pay_level TEXT DEFAULT '', pay_methods TEXT DEFAULT '',  -- proof | mention | none, and the methods seen on the site
+  email TEXT, email_source TEXT, email_alts TEXT DEFAULT '',
+  status TEXT DEFAULT 'new',  -- new | verified | needs_email | rejected | approved | replied | won | lost | done
+  reject_reason TEXT, verified_at TEXT, approved_at TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS prospect_steps (  -- the POPLoad email sequence, one row per step
+  id INTEGER PRIMARY KEY, prospect_id INTEGER NOT NULL, step TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',  -- pending | sent | skipped | failed
+  attempts INTEGER DEFAULT 0, sent_at TEXT, resend_id TEXT, note TEXT,
+  UNIQUE(prospect_id, step)
+);
 CREATE TABLE IF NOT EXISTS suppressed_emails (email TEXT PRIMARY KEY, reason TEXT, added_at TEXT);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
