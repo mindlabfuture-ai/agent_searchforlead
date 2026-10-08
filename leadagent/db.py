@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 PLATFORMS = ["facebook", "instagram", "tiktok", "shopee", "lazada", "carousell"]
 MARKETPLACES = {"shopee", "lazada", "carousell", "tiktok"}
 LABELS = {"facebook": "Facebook page", "instagram": "Instagram", "tiktok": "TikTok shop",
-          "shopee": "Shopee shop", "lazada": "Lazada shop", "carousell": "Carousell shop"}
+          "shopee": "Shopee shop", "lazada": "Lazada shop", "carousell": "Carousell shop",
+          "web": "website", "maps": "business listing"}
 
 _SKIP = {
     "facebook": {"groups", "events", "watch", "marketplace", "photo", "photos", "posts", "story.php",
@@ -170,9 +171,13 @@ def connect(path):
     return con
 
 
-def upsert_lead(con, url, name="", snippet="", website="", source=""):
-    """Insert unless already known or on the do-not-contact list. Returns True if new."""
-    platform, canon = normalize(url)
+def upsert_lead(con, url, name="", snippet="", website="", source="", platform=None):
+    """Insert unless already known or on the do-not-contact list. Returns True if new.
+    `platform` is for leads that are not social profiles (a business's own website, a map listing): `url` is then
+    already canonical and is stored as given."""
+    canon = url if platform else None
+    if not platform:
+        platform, canon = normalize(url)
     if not canon:
         return False
     if con.execute("SELECT 1 FROM do_not_contact WHERE url=?", (canon,)).fetchone():
