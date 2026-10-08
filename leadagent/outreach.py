@@ -1,7 +1,8 @@
 """Drafts only. A human reviews and sends every message from the business's own Page/inbox."""
 from . import config
+from .db import LABELS, MARKETPLACES
 
-EN = """Hi {name}! I came across your page and love what you're selling.
+EN = """Hi {name}! I came across your {where} and love what you're selling.
 
 I run {company}, a Shopify Partner based in Taguig. We set up simple online stores for Filipino sellers so customers can order and pay without messaging back and forth: product pages, GCash/Maya/bank transfer checkout, and shipping set up.
 
@@ -10,7 +11,7 @@ Would you like a quick look at what a basic store for {name} could look like? No
 - {sender}, {company}
 Reply STOP and I won't message again."""
 
-TL = """Hi po {name}! Napadaan po ako sa page ninyo, ang ganda ng products.
+TL = """Hi po {name}! Napadaan po ako sa {where} ninyo, ang ganda ng products.
 
 Ako po si {sender} ng {company}, Shopify Partner sa Taguig. Tumutulong po kami mag-set up ng simpleng online store para sa Filipino sellers: product pages, GCash/Maya/bank transfer checkout, at shipping, para hindi na po kailangan ng back-and-forth sa DM.
 
@@ -29,10 +30,21 @@ def is_taglish(lead):
     return sum(w in t for w in config.TAGALOG_WORDS) >= 2
 
 
+MARKETPLACE_EN = "\n\nBonus: a store of your own means no marketplace fees and your customers' details are yours, so you can keep selling to them directly."
+MARKETPLACE_TL = "\n\nBonus po: kapag may sariling store, walang marketplace fees at sa inyo po ang customer details para makapag-benta pa kayo sa kanila nang direkta."
+
+
 def draft(lead):
-    ctx = dict(name=lead["name"] or "there", company=config.env("SENDER_COMPANY", "MindLab Future AI"),
+    plat = lead["platform"] if "platform" in lead.keys() else "facebook"
+    ctx = dict(where=LABELS.get(plat, "page"), name=lead["name"] or "there", company=config.env("SENDER_COMPANY", "MindLab Future AI"),
                sender=config.env("SENDER_NAME", "Mark"))
-    return (TL if is_taglish(lead) else EN).format(**ctx)
+    tl = is_taglish(lead)
+    body = (TL if tl else EN).format(**ctx)
+    if plat in MARKETPLACES:
+        sign = "\n\n- "
+        head, tail = body.rsplit(sign, 1)
+        body = head + (MARKETPLACE_TL if tl else MARKETPLACE_EN) + sign + tail
+    return body
 
 
 def popload_followup(lead):

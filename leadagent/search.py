@@ -6,15 +6,15 @@ import re
 import urllib.request
 
 from . import config
-from .db import normalize_fb_url
+from .db import normalize
 
 URL_RE = re.compile(r"https?://[^\s\"'<>)]+")
 
 
-def build_queries(niches=None, locations=None):
+def build_queries(platform="facebook", niches=None, locations=None):
     for niche, loc, tpl in itertools.product(niches or config.NICHES,
                                              locations or config.LOCATIONS,
-                                             config.QUERY_TEMPLATES):
+                                             config.PLATFORM_QUERIES[platform]):
         yield tpl.format(niche=niche, loc=loc)
 
 
@@ -63,20 +63,22 @@ def extract_website(text):
 
 
 def clean_name(title):
-    return re.sub(r"\s*[-|·]\s*(Home|Facebook|Posts|Photos|About).*$", "", title or "", flags=re.I).strip()
+    t = re.sub(r"\s*[-|·]\s*(Home|Facebook|Posts|Photos|About|Shopee|Lazada|Carousell|TikTok).*$", "", title or "", flags=re.I)
+    return re.sub(r"\s*\(@[\w.]+\).*$", "", t).strip()  # "Name (@handle) • Instagram photos..."
 
 
 def results_to_leads(results):
     for r in results:
-        url = normalize_fb_url(r["url"])
+        _, url = normalize(r["url"])
         if url:
-            yield {"fb_url": url, "name": clean_name(r["title"]), "snippet": r["snippet"],
+            yield {"url": url, "name": clean_name(r["title"]), "snippet": r["snippet"],
                    "website": extract_website(r["snippet"])}
 
 
 def run(con, queries, search_fn, max_queries=None, log=print):
+    """Returns (new_leads, successful_queries). successful==0 means the source looks unavailable."""
     from .db import upsert_lead
-    added = 0
+    added = ok = 0
     for i, q in enumerate(queries):
         if max_queries is not None and i >= max_queries:
             break
@@ -85,10 +87,26 @@ def run(con, queries, search_fn, max_queries=None, log=print):
         except Exception as e:  # keep going on a bad query / rate limit
             log(f"! {q}: {e}")
             continue
+        ok += 1
         n = sum(upsert_lead(con, source=f"search:{q}", **l) for l in results_to_leads(results))
         added += n
         log(f"{n:>3} new  <- {q}")
-    return added
+    return added, ok
+
+
+def run_auto(con, search_fn, niche=None, location=None, max_queries=10, min_new=5, log=print):
+    """Facebook first; if it is down or yields < min_new new leads, fall back to other platforms in order."""
+    total = 0
+    for platform in config.PLATFORM_QUERIES:
+        qs = list(build_queries(platform, [niche] if niche else None, [location] if location else None))
+        log(f"== {platform}: {len(qs)} queries, running up to {max_queries}")
+        added, ok = run(con, qs, search_fn, max_queries, log)
+        total += added
+        if ok == 0:
+            log(f"   {platform} unavailable (0 successful queries) -> falling back")
+        if total >= min_new:
+            break
+    return total
 
 
 def meta_graph_search(query, token, limit=25):
