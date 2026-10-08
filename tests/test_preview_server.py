@@ -92,3 +92,17 @@ class DemoZipRouteTests(PreviewServerTests):
         previews.generate(con, con.execute("SELECT * FROM leads").fetchone(), lambda u: None, lambda u: None)
         code, data, headers = self.call("/previews/1/demo.zip")
         self.assertEqual((code, data[:2]), (200, b"PK")); self.assertEqual(headers["Content-Type"], "application/zip")
+
+
+@mock.patch.dict(os.environ, ENV)
+class ThemeRouteTests(PreviewServerTests):
+    def test_theme_downloads_need_login_and_work(self):
+        for name in ("theme.zip", "products.csv", "setup.md"):
+            self.assertEqual(self.call(f"/previews/1/{name}", auth=False)[0], 401, name)
+            self.assertEqual(self.call(f"/previews/1/{name}")[0], 404, name)  # no preview yet
+        con = db.connect(config.DB_PATH)
+        previews.generate(con, con.execute("SELECT * FROM leads").fetchone(), lambda u: None, lambda u: None)
+        code, data, headers = self.call("/previews/1/theme.zip")
+        self.assertEqual((code, data[:2], headers["Content-Type"]), (200, b"PK", "application/zip"))
+        self.assertIn(b"Handle,Title", self.call("/previews/1/products.csv")[1])
+        self.assertIn(b"Setting up the", self.call("/previews/1/setup.md")[1])

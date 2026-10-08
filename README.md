@@ -138,6 +138,12 @@ Seven days after the first email, a lead that has not replied can get one more e
 
 Uploads are decoded and re-encoded (metadata stripped, non-images rejected). Only the logo and product images used in the email are served, through signed unlisted links; screenshots are visible only to you after login. The agent never scrapes Facebook or Instagram, so those images come from you.
 
+### Shopify theme ZIP
+
+Also on a lead's preview page: **theme.zip**, **products.csv** and a **setup guide**. The theme is Shopify's Dawn 16.0.0 (vendored in `leadagent/theme_base/`, pinned to a commit) with their palette (Dawn's five colour schemes, checked for readable contrast), button and image shape by style, the logo in the header (their image, or the generated placeholder), and the home page heading and tagline. Upload it under Online Store > Themes > Add theme. `products.csv` imports the products as drafts (sample products are tagged `sample`; images are fetched from your signed image links, so `BASE_URL` must be public). The guide lists the steps through handover.
+
+Dawn's licence only allows themes that work with Shopify and requires its notice to stay with the code; the zip includes `LICENSE.md`. The patches to Dawn fail loudly if its markup ever changes. The theme passes Shopify's `theme-check` with the same 9 findings as unmodified Dawn, but it has **not been uploaded to a live store**: open it in the theme editor before handing over.
+
 ### Demo site (a live preview at the business-name address)
 
 On a lead's preview page, **Publish demo site** builds a small storefront from the same preview (their palette, logo, up to three products, asymmetric layout, mobile-first) and publishes it to Netlify at `<business-name>.mindlabfuture-ai.com` (`glow-ph-skin-co`, with `-2` if the name is taken). Set `NETLIFY_AUTH_TOKEN` in Railway (a personal access token; `NETLIFY_ACCOUNT_SLUG` if your sites live in a team, `DEMO_DOMAIN` if not `mindlabfuture-ai.com`). The domain's DNS must be on Netlify, and the same token needs access to that DNS zone. **Download demo site (zip)** gives the same files without publishing.

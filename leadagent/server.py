@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase
+from . import config, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase, themezip
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -262,6 +262,17 @@ class Handler(BaseHTTPRequestHandler):
             if not data:
                 return self._send(404, "No preview yet", "text/plain")
             return self._send(200, data, "application/zip", headers=[("Content-Disposition", "attachment; filename=demo-site.zip")])
+        m = re.fullmatch(r"/previews/(\d+)/(theme\.zip|products\.csv|setup\.md)", u.path)
+        if m and self._authed():  # the Shopify theme for this lead, its product import file and the setup guide
+            if not config.base_url():
+                return self._send(400, "BASE_URL is not set (the product import links to your hosted images)", "text/plain")
+            zbytes, csv_text, guide, err = themezip.bundle(db.connect(config.DB_PATH), int(m.group(1)), config.base_url())
+            if err:
+                return self._send(404, err, "text/plain")
+            kind = m.group(2)
+            body, ctype = {"theme.zip": (zbytes, "application/zip"), "products.csv": (csv_text, "text/csv; charset=utf-8"),
+                           "setup.md": (guide, "text/markdown; charset=utf-8")}[kind]
+            return self._send(200, body, ctype, headers=[("Content-Disposition", f"attachment; filename={kind}")])
         m = re.fullmatch(r"/pimg/(\d+)/(\w+)", u.path)
         if m and self._authed():  # your uploaded screenshots and photos, behind the login only
             up = previews.get_uploads(db.connect(config.DB_PATH), int(m.group(1))).get(m.group(2))
