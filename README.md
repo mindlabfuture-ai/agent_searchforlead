@@ -138,6 +138,12 @@ Seven days after the first email, a lead that has not replied can get one more e
 
 Uploads are decoded and re-encoded (metadata stripped, non-images rejected). Only the logo and product images used in the email are served, through signed unlisted links; screenshots are visible only to you after login. The agent never scrapes Facebook or Instagram, so those images come from you.
 
+### Demo site (a live preview at the business-name address)
+
+On a lead's preview page, **Publish demo site** builds a small storefront from the same preview (their palette, logo, up to three products, asymmetric layout, mobile-first) and publishes it to Netlify at `<business-name>.mindlabfuture-ai.com` (`glow-ph-skin-co`, with `-2` if the name is taken). Set `NETLIFY_AUTH_TOKEN` in Railway (a personal access token; `NETLIFY_ACCOUNT_SLUG` if your sites live in a team, `DEMO_DOMAIN` if not `mindlabfuture-ai.com`). The domain's DNS must be on Netlify, and the same token needs access to that DNS zone. **Download demo site (zip)** gives the same files without publishing.
+
+Guardrails, because it shows a real business's name on your domain: a banner on every page says it is a design preview and not a live store; nothing can be bought (Add to cart only shows a notice); sample products are labelled; `noindex`, `robots.txt` and an `X-Robots-Tag` header keep search engines out; no scripts or styles from other sites except Google Fonts; it is deleted after 30 days (extendable), and at once when the lead unsubscribes, bounces, is marked do-not-contact or lost, or the showcase is skipped. Only you publish; the day-7 email links to it only while it is live.
+
 ## Rules the agent follows (on purpose)
 
 - **No scraping or logged-in bots on any platform** (Facebook, Instagram, TikTok, Shopee and Lazada all forbid it). Meta's terms forbid it and it gets your Page and personal account banned. Discovery goes through search APIs or your own manual finds.

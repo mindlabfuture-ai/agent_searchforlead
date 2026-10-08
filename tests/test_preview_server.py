@@ -81,3 +81,14 @@ class PreviewServerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch.dict(os.environ, ENV)
+class DemoZipRouteTests(PreviewServerTests):
+    def test_demo_zip_needs_login_and_returns_a_zip(self):
+        self.assertEqual(self.call("/previews/1/demo.zip", auth=False)[0], 401)
+        self.assertEqual(self.call("/previews/1/demo.zip")[0], 404)  # no preview yet
+        con = db.connect(config.DB_PATH)
+        previews.generate(con, con.execute("SELECT * FROM leads").fetchone(), lambda u: None, lambda u: None)
+        code, data, headers = self.call("/previews/1/demo.zip")
+        self.assertEqual((code, data[:2]), (200, b"PK")); self.assertEqual(headers["Content-Type"], "application/zip")

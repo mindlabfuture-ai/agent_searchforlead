@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, db, dedupe, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase
+from . import config, db, dedupe, demosite, emailing, followups, importer, pipeline, popload, poploadui, previews, previewui, search, showcase
 
 E = lambda v: html.escape(str(v if v is not None else ""), quote=True)  # lead data comes from the web: always escape
 
@@ -256,6 +256,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(previews.theme_settings(pv), indent=2), "application/json")
             return self._send(200, previews.generated_logo_svg(pv["name"], pv["brand"]), "image/svg+xml",
                               headers=[("Content-Disposition", "attachment; filename=logo.svg")])
+        m = re.fullmatch(r"/previews/(\d+)/demo\.zip", u.path)
+        if m and self._authed():
+            data = demosite.site_zip(db.connect(config.DB_PATH), int(m.group(1)))
+            if not data:
+                return self._send(404, "No preview yet", "text/plain")
+            return self._send(200, data, "application/zip", headers=[("Content-Disposition", "attachment; filename=demo-site.zip")])
         m = re.fullmatch(r"/pimg/(\d+)/(\w+)", u.path)
         if m and self._authed():  # your uploaded screenshots and photos, behind the login only
             up = previews.get_uploads(db.connect(config.DB_PATH), int(m.group(1))).get(m.group(2))
@@ -358,6 +364,8 @@ def tick(log=print, stop=None):
             con.commit()
             popload.discover(con, search.provider(), popload.discovery_queries(pht.date(), config.env_int("PROSPECT_SEARCH_QUERIES", 4)), log=log)
     popload.verify_all(con, log=lambda *_: None)  # checks any newly imported prospects (at most 60 per pass)
+    if config.env("NETLIFY_AUTH_TOKEN") and con.execute("SELECT 1 FROM demo_sites WHERE status='live' LIMIT 1").fetchone():
+        demosite.cleanup(con, log=log)  # expired demos, and demos of leads who opted out, come down
     showcase.prepare(con, log=log)  # builds previews a couple of days early; never approves or sends anything
     if config.env("EMAIL_SENDING_ENABLED").lower() == "true":
         wait = stop.wait if stop else time.sleep

@@ -11,7 +11,7 @@ import urllib.error
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-from . import config, db, emailing, emailtemplate, previews
+from . import demosite, config, db, emailing, emailtemplate, previews
 
 DAYS_UNTIL_SHOWCASE = 7
 PREP_DAYS = 5          # previews are built a couple of days early so they are ready to review on day 7
@@ -61,7 +61,7 @@ def can_send(con, lead, now=None):
     return True, ""
 
 
-def build_showcase(lead, preview, base_url):
+def build_showcase(lead, preview, base_url, demo_url=""):
     name = " ".join((lead["name"] or "").split())[:60]
     shop = name or "your"
     company = config.env("SENDER_COMPANY", "MindLab Future AI")
@@ -85,14 +85,14 @@ def build_showcase(lead, preview, base_url):
     prod_lines = "\n".join(f"- {p['name']}{' ' + p['price'] if p['price'] else ''}{' (sample)' if p['sample'] else ''}" for p in preview["products"])
     text = (f"{greeting}\n\n{intro}\n\n[Store preview for {preview['name']}: {preview['slug']}.mindlabfuture-ai.com. "
             f"The picture is in the HTML version of this email.]\n{prod_lines}\n\nWhat you're seeing:\n" + "\n".join(f"- {n}" for n in notes) +
-            f"\n\n{closing}\nJust reply to this email.\n\n{disclosure}\n\n{sender}\n{company}"
+            (f"\n\nClick through it on your phone (a design preview, not a live store): {demo_url}" if demo_url else "") + f"\n\n{closing}\nJust reply to this email.\n\n{disclosure}\n\n{sender}\n{company}"
             f"\n\n--\n{why}\n{company}, {address}\nNot interested? Unsubscribe: {unsub} (or just reply STOP).")
     mockup = previews.render_mockup(preview, base_url, lead["id"], version)
     html = emailtemplate.render_showcase(
         subject=subject, preheader=f"A quick preview of the store I could build for {name or 'you'}.", greeting=greeting, intro=intro,
         mockup_html=mockup, notes=notes, closing=closing, disclosure=disclosure, cta_label="Yes, build my store",
         cta_mailto=f"mailto:{reply}?subject={quote('Build my store: ' + (name or 'my shop'))}", signature=[sender, company],
-        unsub_url=unsub, why=why, company=company, address=address, logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL))
+        unsub_url=unsub, why=why, company=company, address=address, logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL), demo_url=demo_url)
     return {"subject": subject, "text": text, "html": html,
             "headers": {"List-Unsubscribe": f"<{unsub}>, <mailto:{reply}?subject=unsubscribe>",
                         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}}
@@ -108,7 +108,7 @@ def send_one(con, lead, now=None, post=None, base_url=None, enabled=None, log=pr
     if not base_url:
         return "skipped: BASE_URL not set (needed for the unsubscribe link and preview images)"
     pv = previews.load(con, lead["id"])
-    msg = build_showcase(lead, pv, base_url)
+    msg = build_showcase(lead, pv, base_url, demosite.live_url(con, lead["id"]) or "")
     if not enabled:
         log(f"DRY RUN showcase -> {lead['email']}: {msg['subject']}")
         return "dry_run"

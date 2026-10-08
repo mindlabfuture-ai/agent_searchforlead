@@ -213,6 +213,12 @@ def slugify(name):
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())[:20] or "yourshop"
 
 
+def domain_slug(name):
+    """The business name as a web address label: 'Glow PH Skin Co.' -> 'glow-ph-skin-co' (a-z, 0-9 and hyphens, at most 40)."""
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:40].strip("-")
+    return s or "yourshop"
+
+
 # ---------------- building a preview ----------------
 def _clean(text, limit):
     return " ".join(str(text or "").split())[:limit]
@@ -311,7 +317,7 @@ def build_profile(lead, existing=None, fetch_html=None, fetch_image=None, upload
     accent = norm_hex(ov.get("accent")) or accent
     swatches = (mine_a or auto_a or {}).get("colors") or [brand]
     style = ov.get("style") if ov.get("style") in STYLES else ("elegant" if niche in LUXURY else "modern")
-    profile = {"name": name, "slug": slugify(name), "niche": niche, "brand": brand, "accent": accent, "brand_note": brand_note,
+    profile = {"name": name, "slug": domain_slug(name), "niche": niche, "brand": brand, "accent": accent, "brand_note": brand_note,
               "swatches": swatches, "style": style, "tagline": _clean(ov.get("tagline"), 120), "logo": logo, "products": products,
               "site": website, "notes": notes, "overrides": ov}
     return profile, images
