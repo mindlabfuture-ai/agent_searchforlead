@@ -30,12 +30,12 @@ Before transferring: no real transactions can run on a transfer store, the onlin
 | Referral commission | 20% of the monthly base platform fee, for 4 years | Calculated on fees actually paid, net of discounts. Excludes Starter and Lite. Payouts monthly with a 30-day hold. Shopify decides payouts at its discretion. |
 | Example: Basic plan | about $5/month at $25/month, about $3.80 at the yearly rate | Shopify's Philippines pricing page lists Basic at $25/month monthly, $19/month yearly. |
 | POPLoad subscription | about $9.70/month at $9.99 | App revenue share is 100% up to $1M, minus a 2.9% processing fee. This is the bigger earner per store. |
-| Money-back guarantee exposure | up to 3 months of the plan, about $75 on Basic monthly | Compare with about $15 of commission over the same 3 months. Decide whether to cap it. |
+| Money-back guarantee exposure | capped at ₱1,000 per store (about $17), covering the first month | One month of Basic is about $25 (about ₱1,400), so the cap can be lower than the fee. Your commission on that first month is about $5. |
 
 **Confirm in the Partner Dashboard before counting on it:** search results disagreed on whether standard plans still earn the 20% after July 2025. The Help Center page says they do (excluding Starter and Lite). Check the "Partner earning model" FAQ it links to.
 
 ## Guarantee: write it down
-The email promises: "if your store makes no sales in its first 3 months, I'll refund the Shopify fees you paid." Put the terms in writing before the first handover, for example: counted from the day the store goes live, "no sales" means no paid orders from real customers, refund on proof of the Shopify invoices, within 14 days of asking. Edit `OFFER_EN` and `OFFER_TL` in `leadagent/emailing.py` if the promise changes.
+The email promises: "if your store makes no sales in its first month, I'll refund the Shopify fees you paid, up to ₱1,000." Put the terms in writing before the first handover, for example: counted from the day the store goes live (the day the merchant accepts the transfer), "no sales" means no paid orders from real customers, refund on proof of the Shopify invoice, within 14 days of asking, one refund per store. The cap means a merchant on a plan costing more than ₱1,000 for the month is refunded ₱1,000 only, so say that plainly when they ask which plan to choose. Edit `OFFER_EN` and `OFFER_TL` in `leadagent/emailing.py` if the promise changes.
 
 ## Growth follow-up (planned)
 Per store after handover: day 7 check POPLoad is working and the first payment-receipt flow has been tested; day 30 growth tips (product photos, Facebook/Instagram catalog links, GCash QR on the thank-you page) and a short review ask; day 80 a heads-up on the plan price and an upgrade or VIPriority suggestion where it fits (luxury items).

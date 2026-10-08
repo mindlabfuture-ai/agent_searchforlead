@@ -85,6 +85,18 @@ class EmailTests(unittest.TestCase):
             self.assertIn(needle, tl["text"]); self.assertIn(needle, plain(tl["html"]))
         self.assertIn("Libreng Shopify store build", tl["html"])             # preheader follows the language
 
+    def test_guarantee_is_one_month_and_capped_in_both_languages(self):
+        con = mem(); en = emailing.build_email(lead(con, "glowph"), config.base_url())
+        g = "if your store makes no sales in its first month, I'll refund the Shopify fees you paid, up to ₱1,000."
+        self.assertIn(g, en["text"]); self.assertIn(g, plain(en["html"]))
+        con2 = mem(); lead(con2, "kapeng", name="Kapeng"); con2.execute("UPDATE leads SET snippet='available po, mga kape po'")
+        tl = emailing.build_email(con2.execute("SELECT * FROM leads").fetchone(), config.base_url())
+        g2 = "kung walang sales ang store ninyo sa unang 1 buwan, ire-refund ko po ang binayad ninyo sa Shopify, hanggang ₱1,000."
+        self.assertIn(g2, tl["text"]); self.assertIn(g2, plain(tl["html"]))
+        for m in (en, tl):                                                  # the old 3-month promise must be gone everywhere
+            for part in (m["text"], plain(m["html"])):
+                self.assertNotIn("3 months", part); self.assertNotIn("3 buwan", part)
+
     def test_no_promo_claim_because_transferred_stores_are_not_eligible(self):
         con = mem(); l = lead(con, "glowph"); m = emailing.build_email(l, config.base_url())
         for part in (m["text"], plain(m["html"])):
