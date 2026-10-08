@@ -1,5 +1,6 @@
 """Lead discovery through search APIs (no Facebook scraping)."""
 import itertools
+import urllib.error
 import urllib.parse
 import json
 import re
@@ -18,16 +19,42 @@ def build_queries(platform="facebook", niches=None, locations=None):
         yield tpl.format(niche=niche, loc=loc)
 
 
+class SearchError(Exception):
+    """A search API refused a query. Carries the HTTP status and the start of the reply, so the log says why."""
+    def __init__(self, status, body=""):
+        super().__init__(f"HTTP {status}: {body}".strip())
+        self.status = status
+
+
+def _open(req):
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read()[:200].decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        raise SearchError(e.code, body) from e
+
+
 def _post_json(url, payload, headers):
-    req = urllib.request.Request(url, json.dumps(payload).encode(), headers, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+    return _open(urllib.request.Request(url, json.dumps(payload).encode(), headers, method="POST"))
 
 
 def _get_json(url, headers):
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+    return _open(urllib.request.Request(url, headers=headers))
+
+
+def search_once(search_fn, query):
+    """Run a query. If the provider answers 400 to one with quote marks, try again without them: quoted phrases are a
+    nicety, and a refused query would otherwise return nothing at all."""
+    try:
+        return search_fn(query)
+    except SearchError as e:
+        if e.status == 400 and '"' in query:
+            return search_fn(" ".join(query.replace('"', " ").split()))
+        raise
 
 
 def serper(query, key, num=20):
@@ -83,7 +110,7 @@ def run(con, queries, search_fn, max_queries=None, log=print):
         if max_queries is not None and i >= max_queries:
             break
         try:
-            results = search_fn(q)
+            results = search_once(search_fn, q)
         except Exception as e:  # keep going on a bad query / rate limit
             log(f"! {q}: {e}")
             continue

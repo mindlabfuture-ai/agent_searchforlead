@@ -162,7 +162,7 @@ def discover(con, search_fn, queries, log=print):
     added = 0
     for q in queries:
         try:
-            results = search_fn(q)
+            results = search.search_once(search_fn, q)
         except Exception as e:  # a bad query or rate limit must not stop the rest
             log(f"! {q}: {e}")
             continue
