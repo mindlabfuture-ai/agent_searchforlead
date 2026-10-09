@@ -12,6 +12,7 @@ What is new in this version:
 - Everything it reads shows up in the assistant's brief and the /inbox page. It stores subjects and a one-line summary, never bodies."""
 import email
 import email.policy
+import hashlib
 import html
 import imaplib
 import json
@@ -20,6 +21,7 @@ import re
 import smtplib
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.header import decode_header, make_header
@@ -136,18 +138,53 @@ class Mailbox:
             im.expunge()
 
     def send(self, to, subject, body, in_reply_to=None, automatic=False):
+        """Send through SMTP; if the host blocks SMTP (Railway does on Free, Trial and Hobby plans) send through Resend's web API instead.
+        After a blocked attempt SMTP is not tried again for an hour, so each reply does not wait for a timeout."""
+        global _smtp_blocked_until
+        subject = subject if subject.lower().startswith("re:") or not in_reply_to else f"Re: {subject}"
+        text = body + "\n\n(Reply STOP to opt out of follow-ups.)"
+        if time.time() >= _smtp_blocked_until:
+            try:
+                return self._send_smtp(to, subject, text, in_reply_to, automatic)
+            except smtplib.SMTPAuthenticationError:
+                raise  # wrong password: say so, do not hide it behind another route
+            except OSError as ex:  # unreachable, refused or timed out: the network blocks SMTP
+                if not (config.env("RESEND_API_KEY") and config.env("SENDER_FROM_EMAIL")):
+                    raise
+                _smtp_blocked_until = time.time() + 3600
+                log.warning("SMTP is not reachable (%r); sending replies through Resend", ex)
+        return self._send_resend(to, subject, text, in_reply_to, automatic)
+
+    def _send_smtp(self, to, subject, text, in_reply_to, automatic):
         m = EmailMessage()
-        m["From"], m["To"] = formataddr((self.from_name, self.user)), to
-        m["Subject"] = subject if subject.lower().startswith("re:") or not in_reply_to else f"Re: {subject}"
+        m["From"], m["To"], m["Subject"] = formataddr((self.from_name, self.user)), to, subject
         m["Message-ID"] = make_msgid(domain=self.user.split("@")[1])
         if in_reply_to:
             m["In-Reply-To"] = m["References"] = in_reply_to
         if automatic:
             m["Auto-Submitted"] = "auto-replied"
-        m.set_content(body + "\n\n(Reply STOP to opt out of follow-ups.)")
-        with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as s:
+        m.set_content(text)
+        with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=20) as s:
             s.login(self.user, self.password)
             s.send_message(m)
+
+    def _send_resend(self, to, subject, text, in_reply_to, automatic):
+        """Reply from the verified sending address with Reply-To set to the support mailbox, so the answer lands back here."""
+        headers = {}
+        if in_reply_to:
+            headers["In-Reply-To"] = headers["References"] = in_reply_to
+        if automatic:
+            headers["Auto-Submitted"] = "auto-replied"
+        payload = {"from": f"{self.from_name} <{config.env('SENDER_FROM_EMAIL')}>", "to": [to], "reply_to": self.user,
+                   "subject": subject, "text": text, "headers": headers}
+        key = "inbox-" + hashlib.sha256(f"{to}|{subject}|{text}|{in_reply_to}".encode()).hexdigest()[:40]  # one send per identical reply
+        try:
+            emailing.resend_post(payload, config.env("RESEND_API_KEY"), key)
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Resend refused the reply (HTTP {e.code}): {e.read()[:150].decode('utf-8', 'replace')}") from e
+
+
+_smtp_blocked_until = 0.0
 
 
 class Telegram:
@@ -176,8 +213,12 @@ class Telegram:
         return self._call("getUpdates", {"offset": offset, "timeout": 25}, timeout=35).get("result", []) if self.on else []
 
     def answer(self, cb_id, text):
+        """Confirm a button tap. Telegram refuses texts over 200 characters and taps older than about a minute; neither may break the loop."""
         if self.on:
-            self._call("answerCallbackQuery", {"callback_query_id": cb_id, "text": text}, timeout=10)
+            try:
+                self._call("answerCallbackQuery", {"callback_query_id": cb_id, "text": str(text)[:190]}, timeout=10)
+            except Exception as ex:
+                log.warning("could not confirm the Telegram tap: %r", ex)
 
 
 # ---------------- Claude ----------------
@@ -554,15 +595,31 @@ def nurture_once(con, ai, mail, tg, now=None):
 
 
 def telegram_poll_once(con, tg, mail):
-    """Handle button taps. Only the owner's chat may approve a send."""
+    """Handle button taps. Only the owner's chat may approve a send. Each tap is recorded as seen before it is acted on, so a tap is
+    handled at most once: a failure is reported in the chat, never retried in a loop."""
     off = int((con.execute("SELECT value FROM meta WHERE key='tg_offset'").fetchone() or [0])[0])
     for u in tg.updates(off):
         off = u["update_id"] + 1
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('tg_offset', ?)", (str(off),))
+        con.commit()
         cb = u.get("callback_query")
         if cb and str(cb["message"]["chat"]["id"]) == str(tg.chat):
             action, _, pid = cb["data"].partition(":")
             if pid.isdigit() and action in ("ok", "no"):
-                tg.answer(cb["id"], send_pending(con, int(pid), mail) if action == "ok" else skip_pending(con, int(pid)))
+                try:
+                    result = send_pending(con, int(pid), mail) if action == "ok" else skip_pending(con, int(pid))
+                except Exception as ex:
+                    log.exception("handling a Telegram tap failed")
+                    result = f"Could not send: {ex}"
+                try:
+                    tg.answer(cb["id"], result)
+                except Exception:
+                    log.warning("could not confirm the Telegram tap")
+                if result.startswith("Could not send"):
+                    try:
+                        tg.send("\u26a0\ufe0f " + html.escape(result[:600]) + "\nThe draft is still waiting on the Inbox page.")
+                    except Exception:
+                        log.warning("could not report the failed send in Telegram")
     con.execute("INSERT OR REPLACE INTO meta VALUES ('tg_offset', ?)", (str(off),))
     con.commit()
 

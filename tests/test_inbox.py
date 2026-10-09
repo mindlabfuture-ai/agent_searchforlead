@@ -428,3 +428,63 @@ class RequeueTests(unittest.TestCase):
         with mock.patch.object(inbox, "triage", return_value=T()):
             self.assertEqual(inbox.poll_once(con, object(), mail, tg), 1)
         self.assertEqual(con.execute("SELECT status FROM inbox_messages WHERE msg_id='m1'").fetchone()[0], "draft_waiting")
+
+
+@mock.patch.dict(os.environ, {**CLEAN, **ENV, "MAIL_PASSWORD": "pw", "RESEND_API_KEY": "rk", "SENDER_FROM_EMAIL": "hello@mail.example.ph"})
+class SendRouteTests(unittest.TestCase):
+    def setUp(self):
+        inbox._smtp_blocked_until = 0.0
+
+    def test_blocked_smtp_falls_back_to_resend_and_is_not_retried_for_an_hour(self):
+        sent = []
+        post = lambda payload, key, idem: sent.append((payload, idem)) or {"id": "r1"}
+        with mock.patch("smtplib.SMTP_SSL", side_effect=OSError("[Errno 101] Network is unreachable")) as smtp, mock.patch.object(inbox.emailing, "resend_post", post):
+            inbox.Mailbox().send("ana@shop.ph", "Store", "Hello", "<m1@x>")
+            inbox.Mailbox().send("bo@shop.ph", "Store", "Hello", "<m2@x>")
+        self.assertEqual(smtp.call_count, 1)                                                  # the second send skipped SMTP
+        p, idem = sent[0]
+        self.assertEqual((p["from"], p["reply_to"], p["to"], p["subject"]), ("MindLab Future AI <hello@mail.example.ph>", "support@mindlabfuture-ai.com", ["ana@shop.ph"], "Re: Store"))
+        self.assertEqual(p["headers"]["In-Reply-To"], "<m1@x>"); self.assertIn("Reply STOP", p["text"])
+        self.assertNotEqual(idem, sent[1][1])
+
+    def test_a_wrong_password_is_reported_not_hidden_behind_resend(self):
+        import smtplib
+        with mock.patch("smtplib.SMTP_SSL") as smtp, mock.patch.object(inbox.emailing, "resend_post") as rp:
+            smtp.return_value.__enter__.return_value.login.side_effect = smtplib.SMTPAuthenticationError(535, b"bad")
+            with self.assertRaises(smtplib.SMTPAuthenticationError): inbox.Mailbox().send("a@x.ph", "s", "b")
+        rp.assert_not_called()
+
+    def test_without_resend_the_smtp_error_is_raised(self):
+        with mock.patch.dict(os.environ, {"RESEND_API_KEY": ""}), mock.patch("smtplib.SMTP_SSL", side_effect=OSError("unreachable")):
+            with self.assertRaises(OSError): inbox.Mailbox().send("a@x.ph", "s", "b")
+
+    def test_a_refusal_from_resend_says_why(self):
+        import io, urllib.error
+        err = urllib.error.HTTPError("https://api.resend.com/emails", 403, "Forbidden", {}, io.BytesIO(b'{"message":"domain not verified"}'))
+        with mock.patch("smtplib.SMTP_SSL", side_effect=OSError("x")), mock.patch.object(inbox.emailing, "resend_post", side_effect=err):
+            with self.assertRaises(RuntimeError) as cm: inbox.Mailbox().send("a@x.ph", "s", "b")
+        self.assertIn("domain not verified", str(cm.exception))
+
+
+class TelegramTapTests(unittest.TestCase):
+    def draft(self, con):
+        return con.execute("INSERT INTO inbox_pending(email,subject,body,in_reply_to,kind,ts) VALUES('ana@shop.ph','Store','Hi','<m1@x>','reply','2026-10-08')").lastrowid
+
+    def test_a_failed_send_is_reported_once_and_never_retried(self):
+        con = mem(); pid = self.draft(con)
+        tap = {"update_id": 7, "callback_query": {"id": "a", "data": f"ok:{pid}", "message": {"chat": {"id": 42}}}}
+        class TG(FakeTG):
+            def answer(self, cb, text): raise OSError("HTTP 400")                              # even a broken confirmation must not matter
+        tg = TG([tap])
+        for _ in range(3):
+            inbox.telegram_poll_once(con, tg, FakeMail(fail="send"))
+        self.assertEqual(con.execute("SELECT value FROM meta WHERE key='tg_offset'").fetchone()[0], "8")
+        self.assertEqual(con.execute("SELECT status FROM inbox_pending").fetchone()[0], "waiting")   # the draft is still there to try again
+        self.assertEqual(len(tg.out), 1); self.assertIn("Could not send", tg.out[0][0])             # one warning, not three
+
+    def test_answer_text_is_cut_to_what_telegram_accepts_and_errors_are_swallowed(self):
+        seen = []
+        tg = inbox.Telegram.__new__(inbox.Telegram); tg.token, tg.chat = "t", "42"
+        tg._call = lambda method, payload, timeout=20: seen.append(payload) or (_ for _ in ()).throw(OSError("400"))
+        tg.answer("x", "y" * 500)                                                                   # does not raise
+        self.assertLessEqual(len(seen[0]["text"]), 200)
