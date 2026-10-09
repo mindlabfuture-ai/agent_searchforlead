@@ -10,7 +10,7 @@ STYLE = ("<style>body{font-family:system-ui;max-width:900px;margin:1rem auto;pad
          "label{display:block;margin:8px 0 2px}input[type=text],textarea{width:100%;box-sizing:border-box;padding:6px}"
          ".b{padding:8px;border-radius:6px}button{margin:2px;padding:6px 12px}.ok{color:#060}.no{color:#a00}.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:#eee}"
          "nav a{margin-right:12px}</style>")
-FILTERS = [("verified", "Ready to approve"), ("needs_email", "Needs an email"), ("approved", "In the sequence"),
+FILTERS = [("verified", "Ready to approve"), ("needs_email", "Needs an email"), ("approved", "In the sequence"), ("manual", "Handled personally"),
            ("rejected", "Rejected"), ("new", "Not checked yet"), ("all", "All")]
 PAIN_NAMES = {"email": "by email", "messenger": "via chat / social media", "order_no": "order number needed", "before_dispatch": "checked before dispatch", "deadline": "payment deadline"}
 
@@ -25,6 +25,28 @@ STEP_MARK = {"sent": "sent", "pending": "waiting", "skipped": "skipped", "failed
 def _btn(tok, pid, action, label, extra=""):
     return (f"<form method=post action=/prospects style=display:inline>{tok}<input type=hidden name=mode value=action>"
             f"<input type=hidden name=id value={pid}><button name=action value={action}>{label}</button>{extra}</form>")
+
+
+def _safe_cell(v):
+    """A spreadsheet runs text that starts with = + - @ as a formula; names and notes here came from the web, so defuse them."""
+    v = str(v if v is not None else "")
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
+def export_csv(con, show="verified"):
+    """The prospects of one list as CSV text (what the page shows, without the 200-card limit)."""
+    import csv, io
+    rows = con.execute("SELECT * FROM prospects" + ("" if show == "all" else " WHERE status=?") + " ORDER BY pain_score DESC, id",
+                       (() if show == "all" else (show,))).fetchall()
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Store", "Website", "Email", "Where the email was found", "Other emails seen", "Status", "Fit", "Fit score",
+                "How they ask for proof of payment", "Payment methods seen", "Niche", "Your list says"])
+    for p in rows:
+        w.writerow([_safe_cell(x) for x in (p["name"], p["website"], p["email"], p["email_source"], p["email_alts"], p["status"],
+                                           popload.pain_class(p["pain_score"] or 0), p["pain_score"] or 0, PAIN_LABEL(p["pain"]),
+                                           p["pay_methods"], p["niche"], p["claim"])])
+    return out.getvalue()
 
 
 def render_page(con, tok, message="", show="verified", results=None):
@@ -47,15 +69,16 @@ def render_page(con, tok, message="", show="verified", results=None):
         fit = f"<br>Fit: <strong>{popload.pain_class(p['pain_score'] or 0)}</strong> ({p['pain_score'] or 0}) &middot; proof: {E(PAIN_LABEL(p['pain']))}"
         b = ""
         if p["status"] == "verified":
-            b = _btn(tok, p["id"], "approve", "Approve sequence") + _btn(tok, p["id"], "reject", "Reject")
+            b = _btn(tok, p["id"], "approve", "Approve sequence") + _btn(tok, p["id"], "manual", "Handle personally") + _btn(tok, p["id"], "reject", "Reject")
         elif p["status"] == "needs_email":
             b = (f"<form method=post action=/prospects>{tok}<input type=hidden name=mode value=action><input type=hidden name=id value={p['id']}>"
                  f"<input type=hidden name=action value=email><input type=text name=value placeholder='public business email you found'>"
-                 f"<button>Save email</button></form>") + _btn(tok, p["id"], "reject", "Reject")
+                 f"<button>Save email</button></form>") + _btn(tok, p["id"], "manual", "Handle personally") + _btn(tok, p["id"], "reject", "Reject")
         elif p["status"] == "approved":
-            b = _btn(tok, p["id"], "replied", "They replied") + _btn(tok, p["id"], "won", "Won") + _btn(tok, p["id"], "lost", "Lost") + _btn(tok, p["id"], "dnc", "Do not contact")
-        elif p["status"] == "rejected":
-            b = _btn(tok, p["id"], "reconsider", "Reconsider")
+            b = (_btn(tok, p["id"], "replied", "They replied") + _btn(tok, p["id"], "won", "Won") + _btn(tok, p["id"], "lost", "Lost")
+                 + _btn(tok, p["id"], "manual", "Handle personally") + _btn(tok, p["id"], "dnc", "Do not contact"))
+        elif p["status"] in ("rejected", "manual"):
+            b = _btn(tok, p["id"], "reconsider", "Reconsider" if p["status"] == "rejected" else "Move back to review")
         cards.append(f"<section><h3>{E(p['name'])} <span class=tag>{E(p['status'])}</span></h3>"
                      f"<a href=\"{E(p['website'])}\" rel=\"noopener noreferrer\" target=_blank>{E(p['domain'])}</a> &middot; {E(p['niche'])}<br>"
                      f"Shopify: {E(p['platform'])} &middot; {E(pay)} {('(' + E(p['pay_methods']) + ')') if p['pay_methods'] else ''}{fit}<br>{email}{alts}{why}{claim}"
@@ -66,6 +89,9 @@ def render_page(con, tok, message="", show="verified", results=None):
         res = ("<section><h3>%d added, %d skipped</h3><ul>" % (added, len(results) - added) +
                "".join(f"<li class={'ok' if s == 'added' else 'no'}>{E(n)}: {E(s)}{' - ' + E(note) if note else ''}</li>" for n, s, note in results) +
                "</ul><p>Checking each site now. Refresh in a minute.</p></section>")
+    ready = counts.get("verified", 0) + counts.get("needs_email", 0)
+    hold = (f"<form method=post action=/prospects onsubmit=\"return confirm('Move all {ready} waiting prospects to Handled personally? They will not get the email sequence.')\">"
+            f"{tok}<input type=hidden name=mode value=hold_ready><button>Take all {ready} waiting prospects out of the email sequence</button></form>") if ready else ""
     banner = "LIVE: approved prospects are emailed Mon-Fri 9-17 PHT" if sending else "DRY RUN: nothing is sent until EMAIL_SENDING_ENABLED=true"
     msg = f"<p class=b style='background:#eef'>{E(message)}</p>" if message else ""
     return (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>POPLoad prospects</title>{STYLE}"
@@ -77,4 +103,4 @@ def render_page(con, tok, message="", show="verified", results=None):
             f"<p>Paste a CSV with a header row (<code>Merchant Brand, Niche / Products, Platform / Domain, Manual Payment Instructions</code>), rows of name, niche, website, notes, or just a list of store links, one per line (for example from the Meta Ad Library; the name is read from the store's own site). Social, marketplace and link-in-bio pages are skipped: paste the store's own website. "
             f"Each site is checked: it must load, run on Shopify, show manual-payment signs and publish a business email.</p>"
             f"<textarea name=csv rows=6></textarea><p><button>Import and verify</button></p></form></section>"
-            f"<p>{nav}</p>{''.join(cards) or '<p>Nothing here.</p>'}")
+            f"<p>{nav} &middot; <a href='/prospects.csv?show={E(show if show in dict(FILTERS) else 'verified')}'>Download this list as CSV</a></p>{hold}{''.join(cards) or '<p>Nothing here.</p>'}")

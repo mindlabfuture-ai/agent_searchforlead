@@ -233,6 +233,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, inboxui.render(db.connect(config.DB_PATH), csrf_token()))
         if u.path == "/assistant" and self._authed():
             return self._send(200, assistantui.render(db.connect(config.DB_PATH), csrf_token()))
+        if u.path == "/prospects.csv" and self._authed():
+            show = parse_qs(u.query).get("show", ["verified"])[0]
+            show = show if show in dict(poploadui.FILTERS) else "verified"
+            return self._send(200, poploadui.export_csv(db.connect(config.DB_PATH), show), "text/csv; charset=utf-8",
+                              headers=[("Content-Disposition", f"attachment; filename=popload-prospects-{show}.csv")])
         if u.path == "/prospects" and self._authed():
             show = parse_qs(u.query).get("show", ["verified"])[0]
             return self._send(200, poploadui.render_page(db.connect(config.DB_PATH), csrf_token(), show=show))
@@ -369,6 +374,8 @@ class Handler(BaseHTTPRequestHandler):
                     threading.Thread(target=lambda: popload.verify_all(db.connect(config.DB_PATH), log=print), daemon=True).start()
             elif f.get("mode") == "action" and (f.get("id") or "").isdigit():
                 message = popload.apply_action(con, int(f["id"]), f.get("action", ""), f.get("value", ""))
+            elif f.get("mode") == "hold_ready":
+                message = f"Moved {popload.hold_ready(con)} prospects to Handled personally. None of them will get the email sequence."
             return self._send(200, poploadui.render_page(con, csrf_token(), message, results=results, show="all" if results else "verified"))
         if u.path == "/clients" and self._authed():
             f = {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace")).items()}
