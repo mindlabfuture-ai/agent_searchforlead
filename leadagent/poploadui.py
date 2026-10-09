@@ -49,6 +49,33 @@ def export_csv(con, show="verified"):
     return out.getvalue()
 
 
+def render_emails(con, pid, base_url):
+    """All four emails as this prospect would receive them, for reading before you approve. Unsubscribe links are disabled here so a click in
+    the preview cannot opt a real address out."""
+    p = con.execute("SELECT * FROM prospects WHERE id=?", (pid,)).fetchone()
+    if not p:
+        return None
+    import re
+    p = dict(p)
+    p["email"] = p["email"] or ("owner@" + p["domain"])
+    demo = bool(config.env("POPLOAD_DEMO_URL"))
+    blocks = []
+    for step, days in popload.STEPS:
+        m = popload.build_message(p, step, base_url)
+        html_ = re.sub(r"href=\"[^\"]*/unsubscribe\?t=[^\"]*\"", 'href="#"', m["html"])
+        text = re.sub(r"https?://\S*/unsubscribe\?t=\S+", "(unsubscribe link)", m["text"])
+        note = " (skipped unless POPLOAD_DEMO_URL is set; it is set now)" if step == "demo" and demo else " (skipped: POPLOAD_DEMO_URL is not set)" if step == "demo" else ""
+        blocks.append(f"<h2>Day {days}: {E(step.replace('_', ' '))}{E(note)}</h2><p><b>Subject:</b> {E(m['subject'])}</p>"
+                      f"<iframe sandbox srcdoc=\"{E(html_)}\"></iframe><details><summary>Plain-text version</summary><pre>{E(text)}</pre></details>")
+    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>Emails for {E(p['name'])}</title><style>body{{font-family:system-ui;max-width:760px;margin:1rem auto;padding:0 16px;background:#f3f3f3}}"
+            "iframe{width:100%;height:900px;border:1px solid #ccc;background:#fff;border-radius:8px}pre{white-space:pre-wrap;background:#fff;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:13px}"
+            "h2{margin:28px 0 4px}</style>"
+            f"<p><a href='/prospects'>&larr; Prospects</a></p><h1>Emails for {E(p['name'])}</h1>"
+            f"<p>To: {E(p['email'] if p['email'] != 'owner@' + p['domain'] else '(no email found yet)')} &middot; Preview only: nothing is sent from this page, and the unsubscribe link is switched off here. "
+            f"The opening line reflects what their own pages showed: <em>{E(PAIN_LABEL(p['pain']))}</em>.</p>" + "".join(blocks))
+
+
 def render_page(con, tok, message="", show="verified", results=None):
     tok = f"<input type=hidden name=csrf value={tok}>"
     sending = config.env("EMAIL_SENDING_ENABLED").lower() == "true"
@@ -82,7 +109,7 @@ def render_page(con, tok, message="", show="verified", results=None):
         cards.append(f"<section><h3>{E(p['name'])} <span class=tag>{E(p['status'])}</span></h3>"
                      f"<a href=\"{E(p['website'])}\" rel=\"noopener noreferrer\" target=_blank>{E(p['domain'])}</a> &middot; {E(p['niche'])}<br>"
                      f"Shopify: {E(p['platform'])} &middot; {E(pay)} {('(' + E(p['pay_methods']) + ')') if p['pay_methods'] else ''}{fit}<br>{email}{alts}{why}{claim}"
-                     f"{('<p><small>' + line + '</small></p>') if line else ''}<p>{b}</p></section>")
+                     f"{('<p><small>' + line + '</small></p>') if line else ''}<p>{b} <a href='/prospects/{p['id']}/emails'>Preview the emails</a></p></section>")
     res = ""
     if results is not None:
         added = sum(1 for _, s, _ in results if s == "added")

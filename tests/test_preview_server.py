@@ -55,6 +55,18 @@ class PreviewServerTests(unittest.TestCase):
         for p in ("/previews", "/previews/1", "/pimg/1/shot1", "/previews/1/theme.json"):
             self.assertEqual(self.call(p, auth=False)[0], 401, p)
 
+    def test_prospect_email_preview_needs_login_and_renders(self):
+        from leadagent import popload
+        con = db.connect(config.DB_PATH)
+        popload.add_rows(con, [{"name": "Glow PH", "website": "glowph.com"}])
+        con.execute("UPDATE prospects SET status='verified', email='hello@glowph.com', platform='has_shopify', pay_level='proof', pay_methods='GCash'"); con.commit()
+        pid = con.execute("SELECT id FROM prospects").fetchone()[0]; con.close()
+        self.assertEqual(self.call(f"/prospects/{pid}/emails", auth=False)[0], 401)
+        st, body, _ = self.call(f"/prospects/{pid}/emails")
+        self.assertEqual(st, 200); self.assertIn(b"Day 14: last note", body); self.assertNotIn(b"/unsubscribe?t=", body)
+        self.assertEqual(self.call("/prospects/999/emails")[0], 404)
+        self.assertIn(b"Preview the emails", self.call("/prospects?show=verified")[1])
+
     def test_bad_csrf_rejected(self):
         body, ct = multipart({"csrf": "bad"}, {})
         self.assertEqual(self.call("/previews/1/save", body, ct)[0], 403)

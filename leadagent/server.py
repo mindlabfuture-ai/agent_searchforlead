@@ -238,6 +238,12 @@ class Handler(BaseHTTPRequestHandler):
             show = show if show in dict(poploadui.FILTERS) else "verified"
             return self._send(200, poploadui.export_csv(db.connect(config.DB_PATH), show), "text/csv; charset=utf-8",
                               headers=[("Content-Disposition", f"attachment; filename=popload-prospects-{show}.csv")])
+        m = re.fullmatch(r"/prospects/(\d+)/emails", u.path)
+        if m and self._authed():
+            if not config.base_url():
+                return self._send(400, "BASE_URL is not set (the emails need it for their links)", "text/plain")
+            page = poploadui.render_emails(db.connect(config.DB_PATH), int(m.group(1)), config.base_url())
+            return self._send(200, page) if page else self._send(404, "Not found", "text/plain")
         if u.path == "/prospects" and self._authed():
             show = parse_qs(u.query).get("show", ["verified"])[0]
             return self._send(200, poploadui.render_page(db.connect(config.DB_PATH), csrf_token(), show=show))

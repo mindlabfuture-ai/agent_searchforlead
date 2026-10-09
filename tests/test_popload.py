@@ -419,3 +419,24 @@ class ProspectExportTests(unittest.TestCase):
         page = poploadui.render_page(con, "tok", show="verified")
         for want in ("/prospects.csv?show=verified", "Handled personally", "Take all 1 waiting prospects out of the email sequence", "Handle personally"):
             self.assertIn(want, page)
+
+
+@mock.patch.dict(os.environ, {**ENV, "POPLOAD_DEMO_URL": "https://loom.example/abc"})
+class EmailPreviewTests(unittest.TestCase):
+    def test_preview_shows_all_four_emails_and_cannot_unsubscribe_anyone(self):
+        from leadagent import poploadui
+        con = mem(); p = prospect(con)
+        con.execute("UPDATE prospects SET pain='email'"); con.commit()
+        page = poploadui.render_emails(con, p["id"], "https://leads.example.app")
+        for want in ("Day 0: intro", "Day 3: reminder", "Day 7: demo", "Day 14: last note", "Chasing payment screenshots at Glow PH?", "https://loom.example/abc", "email their payment proof"):
+            self.assertIn(want, page)
+        self.assertNotIn("/unsubscribe?t=", page)                                         # no live opt-out link anywhere in the preview
+        self.assertIn("<iframe sandbox", page)
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM prospect_steps").fetchone()[0], 0)   # looking changes nothing
+
+    def test_preview_works_without_an_email_and_for_unknown_ids(self):
+        from leadagent import poploadui
+        con = mem(); p = prospect(con, email=None)
+        page = poploadui.render_emails(con, p["id"], "https://leads.example.app")
+        self.assertIn("no email found yet", page); self.assertIsNone(poploadui.render_emails(con, 999, "https://x"))
+        self.assertIn("Preview the emails", poploadui.render_page(con, "tok", show="verified"))
