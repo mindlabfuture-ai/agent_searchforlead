@@ -531,7 +531,9 @@ def build_message(prospect, step, base_url):
     greeting, intro = COPY["greeting"].format(name=name), c["intro"].format(**fmt)
     subject, closing = c["subject"].format(**fmt), c["closing"].format(**fmt)
     numbered = "\n".join(f"{n}. {i}" for n, i in enumerate(c["items"], 1))
-    text = (f"{greeting}\n\n{intro}\n\n{c['list_title']}:\n{numbered}\n\n{closing}\n\n{sender}\n{company}"
+    more = config.env("POPLOAD_URL", "https://mindlabfuture-ai.com/popload/") if step != "last_note" else ""  # the last note stays short
+    more_text = f"\n\nMore about POPLoad: {more}" if more else ""
+    text = (f"{greeting}\n\n{intro}\n\n{c['list_title']}:\n{numbered}{more_text}\n\n{closing}\n\n{sender}\n{company}"
             f"\n\n--\n{why}\n{company}, {address}\nNot interested? Unsubscribe: {unsub} (or just reply STOP).")
     demo = config.env("POPLOAD_DEMO_URL")
     button = demo if step == "demo" and demo else f"mailto:{reply}?subject={quote(c['cta_subject'])}"
@@ -540,7 +542,7 @@ def build_message(prospect, step, base_url):
     html = emailtemplate.render_followup(
         subject=subject, preheader=c["preheader"], greeting=greeting, intro=intro, list_title=c["list_title"],
         items=c["items"], closing=closing, cta_label=c["cta"],
-        cta_mailto=button, signature=[sender, company],
+        cta_mailto=button, signature=[sender, company], more_url=more, more_label="More about POPLoad",
         unsub_url=unsub, why=why, company=company, address=address, logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL))
     return {"subject": subject, "text": text, "html": html,
             "headers": {"List-Unsubscribe": f"<{unsub}>, <mailto:{reply}?subject=unsubscribe>",

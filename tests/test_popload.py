@@ -440,3 +440,19 @@ class EmailPreviewTests(unittest.TestCase):
         page = poploadui.render_emails(con, p["id"], "https://leads.example.app")
         self.assertIn("no email found yet", page); self.assertIsNone(poploadui.render_emails(con, 999, "https://x"))
         self.assertIn("Preview the emails", poploadui.render_page(con, "tok", show="verified"))
+
+
+@mock.patch.dict(os.environ, ENV)
+class LearnMoreLinkTests(unittest.TestCase):
+    def test_the_popload_page_is_linked_in_every_email_but_the_last_note(self):
+        con = mem(); p = prospect(con)
+        for step, _ in popload.STEPS:
+            m = popload.build_message(p, step, "https://leads.example.app")
+            has = "More about POPLoad: https://mindlabfuture-ai.com/popload/" in m["text"] and 'href="https://mindlabfuture-ai.com/popload/"' in m["html"]
+            self.assertEqual(has, step != "last_note", step)
+
+    def test_the_address_can_be_changed_and_is_escaped(self):
+        con = mem(); p = prospect(con)
+        with mock.patch.dict(os.environ, {"POPLOAD_URL": 'https://x.example/pop?a=1&b="2"'}):
+            m = popload.build_message(p, "intro", "https://leads.example.app")
+        self.assertIn("&amp;b=&quot;2&quot;", m["html"]); self.assertNotIn('b="2"', m["html"])

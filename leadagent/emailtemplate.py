@@ -119,10 +119,12 @@ def _page(subject, preheader, main, signature, why, company, address, unsub_url,
 
 
 def render_followup(*, subject, preheader, greeting, intro, list_title, items, closing, cta_label, cta_mailto,
-                    signature, unsub_url, why, company, address, logo_url=LOGO_URL, site_url=SITE_URL):
-    """A client email after handover: headline, short intro, one numbered checklist, one button."""
+                    signature, unsub_url, why, company, address, logo_url=LOGO_URL, site_url=SITE_URL, more_url="", more_label=""):
+    """A client email after handover: headline, short intro, one numbered checklist, an optional "learn more" link, one button."""
+    more = (f'<p style="margin:0 0 16px;font-family:{BODY};font-size:15px;line-height:1.6;color:{MUTED}">{E(more_label or "More about what we offer")}: '
+            f'<a href="{E(more_url)}" style="color:{BRASS_HI};text-decoration:underline">{E(more_url.replace("https://", "").rstrip("/"))}</a></p>') if more_url else ""
     main = f"""<h1 class="h1" style="margin:0 0 20px;font-family:{HEAD};font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-0.02em;color:{TEXT}">{E(subject)}</h1>
-{_p(greeting)}{_p(intro)}{_offer_card(list_title, items, numbered=True)}{_p(closing)}
+{_p(greeting)}{_p(intro)}{_offer_card(list_title, items, numbered=True)}{more}{_p(closing)}
 {_button(cta_label, cta_mailto)}"""
     return _page(subject, preheader, main, signature, E(why), company, address, unsub_url, logo_url, site_url)
 
