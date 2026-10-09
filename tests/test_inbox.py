@@ -402,3 +402,29 @@ class DemoStoreKnowledgeTests(unittest.TestCase):
     def test_no_password_is_committed_in_the_knowledge_file(self):
         raw = (inbox.Path(inbox.__file__).parent / "inbox_knowledge.md").read_text(encoding="utf-8")
         self.assertIn("{{DEMO_PASSWORD}}", raw); self.assertNotIn("POPLoad-demo", raw); self.assertNotIn("myshopify.com/", raw.split("<!--demo-->")[1])
+
+
+class RequeueTests(unittest.TestCase):
+    def rows(self, con):
+        for mid, st, att, note in (("m1", "error", 3, "Error code: 400 ... organization_on_hold ..."), ("m2", "error", 3, "ValueError: bad json"),
+                                   ("form-1-a@x.ph", "error", 3, "AI service unavailable; read it in Netlify Forms"), ("m4", "draft_waiting", 1, ""),
+                                   ("m5", "error", 3, "AuthenticationError: invalid x-api-key"), ("m6", "error", 1, "organization_on_hold")):
+            con.execute("INSERT INTO inbox_messages (msg_id,ts,source,addr,subject,status,attempts,note) VALUES (?,?,?,?,?,?,?,?)",
+                        (mid, "2026-10-08", "email", "a@x.ph", "s", st, att, note))
+        con.commit()
+
+    def test_only_mail_given_up_for_a_service_reason_is_requeued_and_only_once(self):
+        con = mem(); self.rows(con)
+        self.assertEqual(inbox.requeue_service_errors(con), 2)                          # m1 and m5
+        got = {r["msg_id"]: (r["status"], r["attempts"]) for r in con.execute("SELECT * FROM inbox_messages")}
+        self.assertEqual(got["m1"], ("error", 0)); self.assertEqual(got["m5"], ("error", 0))
+        self.assertEqual(got["m2"], ("error", 3))                                       # a real failure stays given up
+        self.assertEqual(got["form-1-a@x.ph"], ("error", 3))                            # a form message cannot be re-read
+        self.assertEqual(got["m4"][0], "draft_waiting")
+        self.assertEqual(inbox.requeue_service_errors(con), 0)
+
+    def test_requeued_mail_is_processed_on_the_next_poll(self):
+        con = mem(); self.rows(con); mail, tg = FakeMail(unseen=[msg(msg_id="m1")]), FakeTG()
+        with mock.patch.object(inbox, "triage", return_value=T()):
+            self.assertEqual(inbox.poll_once(con, object(), mail, tg), 1)
+        self.assertEqual(con.execute("SELECT status FROM inbox_messages WHERE msg_id='m1'").fetchone()[0], "draft_waiting")
