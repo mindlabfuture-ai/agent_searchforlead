@@ -2,6 +2,7 @@
 dark navy card, brass accents, Space Grotesk headings. Table layout with inline styles and bgcolor
 fallbacks so it holds up in Gmail, Outlook and Apple Mail. A plain-text version is always sent alongside."""
 import html as H
+import re
 from urllib.parse import quote
 
 # Brand tokens from the website's stylesheet.
@@ -38,7 +39,8 @@ def _offer_card(title, items, notes=(), numbered=False):
     rows = "".join(_offer_item(i, f"{n}." if numbered else "&#10003;") for n, i in enumerate(items, 1))
     return (f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:8px 0 20px\"><tr>"
             f"<td bgcolor=\"{CARD2}\" style=\"background:{CARD2};border:1px solid {BRASS};border-radius:14px;padding:20px 22px 10px\">"
-            f"<div style=\"margin:0 0 12px;font-family:{HEAD};font-size:17px;font-weight:600;letter-spacing:-0.01em;color:{BRASS_HI}\">{E(title.rstrip(':'))}</div>"
+            + (f"<div style=\"margin:0 0 12px;font-family:{HEAD};font-size:17px;font-weight:600;letter-spacing:-0.01em;color:{BRASS_HI}\">{E(title.rstrip(':'))}</div>" if title.strip() else "")
+            +
             f"<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">{rows}</table></td></tr></table>"
             + "".join(_p(n, MUTED, 13, "margin:-8px 0 18px;") for n in notes))
 
@@ -74,6 +76,8 @@ def _button(label, href):
 def _page(subject, preheader, main, signature, why, company, address, unsub_url, logo_url=LOGO_URL, site_url=SITE_URL):
     """The shared frame: header with logo, brass bar, card, signature, footer with unsubscribe."""
     sign = "<br>".join(E(line) for line in signature)
+    opt_out = (f'<a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> or just reply STOP.' if unsub_url
+               else "Not looking for follow-ups? Just reply STOP.")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark light"><meta name="supported-color-schemes" content="dark light">
@@ -108,7 +112,7 @@ def _page(subject, preheader, main, signature, why, company, address, unsub_url,
 {why}<br>
 {E(company)} &middot; {E(address)}<br>
 <a href="{E(site_url)}" style="color:{BRASS_HI};text-decoration:underline">mindlabfuture-ai.com</a> &nbsp;&middot;&nbsp;
-<a href="{E(unsub_url)}" style="color:{BRASS_HI};text-decoration:underline">Unsubscribe</a> or just reply STOP.
+{opt_out}
 </td></tr>
 
 </table></td></tr></table></body></html>"""
@@ -145,3 +149,52 @@ def render_showcase(*, subject, preheader, greeting, intro, mockup_html, notes, 
 def cta_mailto(reply_to, name):
     subject = "Free store preview for " + name
     return f"mailto:{reply_to}?subject={quote(subject)}"
+
+
+_ITEM_RE = re.compile(r"^\s*(\d+[.)]|[-\u2022*])\s+(.*)$")
+_SIGN_RE = re.compile(r"^[\u2014\u2013-]+\s*(.{2,60})$")
+
+
+def reply_parts(body):
+    """A drafted reply as (paragraphs, signature): paragraphs are ('p', text) or ('list', title, items, numbered); the signature is the
+    '- MindLab Future AI team' line when the draft ends with one. The same parsing builds the HTML, so the layout never depends on who pressed Send."""
+    blocks = [b for b in re.split(r"\n\s*\n", (body or "").strip()) if b.strip()]
+    signature = ["MindLab Future AI team"]
+    if blocks and "\n" not in blocks[-1].strip():
+        m = _SIGN_RE.match(blocks[-1].strip())
+        if m:
+            signature = [m.group(1).strip()]
+            blocks = blocks[:-1]
+    out = []
+    for b in blocks:
+        lines = [l.rstrip() for l in b.strip().split("\n")]
+        first = next((i for i, l in enumerate(lines) if _ITEM_RE.match(l)), None)
+        if first is None:
+            out.append(("p", " ".join(l.strip() for l in lines)))
+            continue
+        items, numbered = [], bool(re.match(r"^\s*\d", lines[first]))
+        for l in lines[first:]:
+            m = _ITEM_RE.match(l)
+            if m:
+                items.append(m.group(2).strip())
+            elif items:
+                items[-1] += " " + l.strip()  # a wrapped line belongs to the item above
+        out.append(("list", " ".join(l.strip() for l in lines[:first]), items, numbered))
+    return out, signature
+
+
+def render_reply(*, subject, body, company, address, logo_url=LOGO_URL, site_url=SITE_URL,
+                 why="You are getting this because you wrote to MindLab Future AI."):
+    """The HTML for a reply from the support inbox (draft replies, follow-ups and auto-replies). Same frame as every other MindLab email."""
+    parts, signature = reply_parts(body)
+    main = ""
+    for part in parts:
+        if part[0] == "p":
+            main += _p(part[1])
+        else:
+            _, title, items, numbered = part
+            if title and not items:
+                main += _p(title)
+            main += _offer_card(title or "", items, numbered=numbered)
+    preheader = (parts[1][1] if len(parts) > 1 and parts[1][0] == "p" else parts[0][1] if parts and parts[0][0] == "p" else subject)[:110]
+    return _page(subject, preheader, main, signature, E(why), company, address, "", logo_url, site_url)

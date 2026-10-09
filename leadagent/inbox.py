@@ -29,7 +29,7 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid, parseaddr
 from pathlib import Path
 
-from . import config, db, demosite, emailing, followups, llm, popload, previewui
+from . import config, db, demosite, emailing, emailtemplate, followups, llm, popload, previewui
 
 log = logging.getLogger("inbox")
 def load_knowledge(env=None):
@@ -137,15 +137,25 @@ class Mailbox:
             im.store(num, "+FLAGS", "\\Seen \\Deleted")
             im.expunge()
 
+    def compose(self, subject, body, in_reply_to=None):
+        """(subject, plain text, HTML) of a reply. The one place a reply's content and layout are made, so it is identical whether the owner pressed
+        Send in Telegram or on the Inbox page, and whichever route (SMTP or Resend) carries it."""
+        subject = subject if subject.lower().startswith("re:") or not in_reply_to else f"Re: {subject}"
+        text = body.strip() + "\n\n(Reply STOP to opt out of follow-ups.)"
+        html_ = emailtemplate.render_reply(
+            subject=subject, body=body, company=config.env("SENDER_COMPANY", "MindLab Future AI"),
+            address=config.env("SENDER_ADDRESS", "Corporate Tower 2, BGC, Taguig City, Philippines"),
+            logo_url=config.env("LOGO_URL", emailtemplate.LOGO_URL))
+        return subject, text, html_
+
     def send(self, to, subject, body, in_reply_to=None, automatic=False):
         """Send through SMTP; if the host blocks SMTP (Railway does on Free, Trial and Hobby plans) send through Resend's web API instead.
         After a blocked attempt SMTP is not tried again for an hour, so each reply does not wait for a timeout."""
         global _smtp_blocked_until
-        subject = subject if subject.lower().startswith("re:") or not in_reply_to else f"Re: {subject}"
-        text = body + "\n\n(Reply STOP to opt out of follow-ups.)"
+        subject, text, html_ = self.compose(subject, body, in_reply_to)
         if time.time() >= _smtp_blocked_until:
             try:
-                return self._send_smtp(to, subject, text, in_reply_to, automatic)
+                return self._send_smtp(to, subject, text, html_, in_reply_to, automatic)
             except smtplib.SMTPAuthenticationError:
                 raise  # wrong password: say so, do not hide it behind another route
             except OSError as ex:  # unreachable, refused or timed out: the network blocks SMTP
@@ -153,9 +163,9 @@ class Mailbox:
                     raise
                 _smtp_blocked_until = time.time() + 3600
                 log.warning("SMTP is not reachable (%r); sending replies through Resend", ex)
-        return self._send_resend(to, subject, text, in_reply_to, automatic)
+        return self._send_resend(to, subject, text, html_, in_reply_to, automatic)
 
-    def _send_smtp(self, to, subject, text, in_reply_to, automatic):
+    def _send_smtp(self, to, subject, text, html_, in_reply_to, automatic):
         m = EmailMessage()
         m["From"], m["To"], m["Subject"] = formataddr((self.from_name, self.user)), to, subject
         m["Message-ID"] = make_msgid(domain=self.user.split("@")[1])
@@ -164,11 +174,12 @@ class Mailbox:
         if automatic:
             m["Auto-Submitted"] = "auto-replied"
         m.set_content(text)
+        m.add_alternative(html_, subtype="html")
         with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=20) as s:
             s.login(self.user, self.password)
             s.send_message(m)
 
-    def _send_resend(self, to, subject, text, in_reply_to, automatic):
+    def _send_resend(self, to, subject, text, html_, in_reply_to, automatic):
         """Reply from the verified sending address with Reply-To set to the support mailbox, so the answer lands back here."""
         headers = {}
         if in_reply_to:
@@ -176,7 +187,7 @@ class Mailbox:
         if automatic:
             headers["Auto-Submitted"] = "auto-replied"
         payload = {"from": f"{self.from_name} <{config.env('SENDER_FROM_EMAIL')}>", "to": [to], "reply_to": self.user,
-                   "subject": subject, "text": text, "headers": headers}
+                   "subject": subject, "text": text, "html": html_, "headers": headers}
         key = "inbox-" + hashlib.sha256(f"{to}|{subject}|{text}|{in_reply_to}".encode()).hexdigest()[:40]  # one send per identical reply
         try:
             emailing.resend_post(payload, config.env("RESEND_API_KEY"), key)
