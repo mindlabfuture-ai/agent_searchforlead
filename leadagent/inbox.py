@@ -448,6 +448,23 @@ def _finish(con, mid, status, t, matched, pending_id=None, stop_note=""):
 
 
 # ---------------- polling, drafts and nurture ----------------
+SERVICE_NOTES = ("%organization_on_hold%", "%organization has been disabled%", "AI service unavailable%", "%invalid x-api-key%", "%credit balance%")
+
+
+def requeue_service_errors(con):
+    """Once: mail that was given up on only because the AI service refused (no credits, a bad key) gets a fresh set of tries; it is still
+    unread in the mailbox, so the next poll picks it up. Website-form messages cannot be re-read, so they stay as they are.
+    Returns how many were queued."""
+    if con.execute("SELECT 1 FROM meta WHERE key='inbox_requeue_v1'").fetchone():
+        return 0
+    cond = " OR ".join("note LIKE ?" for _ in SERVICE_NOTES)
+    n = con.execute(f"UPDATE inbox_messages SET attempts=0, note='AI service was down; trying again' WHERE status='error' AND attempts>=? "
+                    f"AND msg_id NOT LIKE 'form-%' AND ({cond})", (MAX_ATTEMPTS, *SERVICE_NOTES)).rowcount
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_requeue_v1', ?)", (db.now(),))
+    con.commit()
+    return n
+
+
 def poll_once(con, ai, mail, tg, log_=log.info):
     """Read new mail once. Records success or failure for the assistant's health check."""
     try:
@@ -459,6 +476,7 @@ def poll_once(con, ai, mail, tg, log_=log.info):
         return 0
     con.execute("INSERT OR REPLACE INTO meta VALUES ('inbox_last_ok', ?)", (db.now(),))
     con.commit()
+    requeue_service_errors(con)
     if llm_down(con):
         return 0  # the mailbox is fine; the mail stays unread until the AI service answers again
     n = 0
