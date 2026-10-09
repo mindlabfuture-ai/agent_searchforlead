@@ -488,3 +488,55 @@ class TelegramTapTests(unittest.TestCase):
         tg._call = lambda method, payload, timeout=20: seen.append(payload) or (_ for _ in ()).throw(OSError("400"))
         tg.answer("x", "y" * 500)                                                                   # does not raise
         self.assertLessEqual(len(seen[0]["text"]), 200)
+
+
+@mock.patch.dict(os.environ, {**CLEAN, **ENV, "MAIL_PASSWORD": "pw", "RESEND_API_KEY": "rk", "SENDER_FROM_EMAIL": "hello@mail.example.ph"})
+class UniformReplyTests(unittest.TestCase):
+    BODY = ("Hi Rhona,\n\nThanks for reaching out!\n\nTo get started, could you tell us:\n1. What products do you sell?\n"
+            "2. What is your timeline?\n\n- MindLab Future AI team".replace("- Mind", "— Mind"))
+
+    def setUp(self):
+        inbox._smtp_blocked_until = 0.0
+
+    def test_reply_layout_has_the_brand_frame_the_list_and_the_signature(self):
+        subject, text, html_ = inbox.Mailbox().compose("Website enquiry", self.BODY, "<m@x>")
+        self.assertEqual(subject, "Re: Website enquiry"); self.assertIn("(Reply STOP to opt out", text)
+        for want in ("MindLab Future AI", "Hi Rhona,", "To get started, could you tell us", "What is your timeline?", "reply STOP", "#E3B965"):
+            self.assertIn(want, html_)
+        self.assertNotIn("Unsubscribe</a>", html_)                                  # a reply has no unsubscribe link, only "reply STOP"
+
+    def test_model_text_cannot_inject_html(self):
+        _, _, html_ = inbox.Mailbox().compose("s", "Hi <script>alert(1)</script> & <b>x</b>\n\n— Team", None)
+        self.assertNotIn("<script>", html_); self.assertIn("&lt;script&gt;", html_)
+
+    def test_smtp_and_resend_carry_the_same_content_and_layout(self):
+        import email as em, email.policy
+        sent_via_smtp = []
+        with mock.patch("smtplib.SMTP_SSL") as smtp:
+            smtp.return_value.__enter__.return_value.send_message.side_effect = lambda m: sent_via_smtp.append(m)
+            inbox.Mailbox().send("a@x.ph", "Website enquiry", self.BODY, "<m@x>")
+        smtp_html = sent_via_smtp[0].get_body(("html",)).get_content()
+        smtp_text = sent_via_smtp[0].get_body(("plain",)).get_content()
+        inbox._smtp_blocked_until = 0.0
+        posted = []
+        with mock.patch("smtplib.SMTP_SSL", side_effect=OSError("blocked")), mock.patch.object(inbox.emailing, "resend_post", lambda p, k, i: posted.append(p) or {"id": "r"}):
+            inbox.Mailbox().send("a@x.ph", "Website enquiry", self.BODY, "<m@x>")
+        self.assertEqual(posted[0]["html"].strip(), smtp_html.strip()); self.assertEqual(posted[0]["text"].strip(), smtp_text.strip())
+
+    def test_telegram_and_inbox_page_send_the_same_email(self):
+        con = mem()
+        def fresh():
+            con.execute("DELETE FROM inbox_pending")
+            return con.execute("INSERT INTO inbox_pending(email,subject,body,in_reply_to,kind,ts) VALUES('a@x.ph','Website enquiry',?,'<m@x>','reply','2026-10-09')", (self.BODY,)).lastrowid
+        out = []
+        for press in ("telegram", "page"):
+            pid = fresh(); posted = []
+            tg = {"update_id": 1, "callback_query": {"id": "c", "data": f"ok:{pid}", "message": {"chat": {"id": 42}}}}
+            with mock.patch("smtplib.SMTP_SSL", side_effect=OSError("blocked")), mock.patch.object(inbox.emailing, "resend_post", lambda p, k, i: posted.append(p) or {"id": "r"}):
+                inbox._smtp_blocked_until = 0.0
+                if press == "telegram":
+                    con.execute("DELETE FROM meta WHERE key='tg_offset'"); inbox.telegram_poll_once(con, FakeTG([tg]), inbox.Mailbox())
+                else:
+                    inbox.send_pending(con, pid, inbox.Mailbox())
+            out.append(posted[0])
+        self.assertEqual(out[0]["html"], out[1]["html"]); self.assertEqual(out[0]["text"], out[1]["text"]); self.assertEqual(out[0]["subject"], out[1]["subject"])
