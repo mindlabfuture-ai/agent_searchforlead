@@ -363,3 +363,59 @@ class RecheckTests(unittest.TestCase):
         self.assertEqual(popload.recheck_if_stale(con), 0)                      # only once per detector version
         con.execute("UPDATE prospects SET status='verified' WHERE name='P0'"); con.commit()
         self.assertEqual(popload.recheck_if_stale(con), 0); self.assertEqual(con.execute("SELECT status FROM prospects WHERE name='P0'").fetchone()[0], "verified")
+
+
+@mock.patch.dict(os.environ, ENV)
+class HandlePersonallyTests(unittest.TestCase):
+    def two(self, con):
+        a = prospect(con, name="Alpha", website="alpha.ph", email="a@alpha.ph"); b = prospect(con, name="Beta", website="beta.ph", email="b@beta.ph")
+        return a, b
+
+    def test_a_card_can_be_taken_out_of_the_sequence_and_moved_back(self):
+        con = mem(); a, b = self.two(con)
+        popload.apply_action(con, a["id"], "approve")
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM prospect_steps WHERE prospect_id=? AND status='pending'", (a["id"],)).fetchone()[0], 4)
+        self.assertIn("Handled personally", popload.apply_action(con, a["id"], "manual"))
+        self.assertEqual(con.execute("SELECT status FROM prospects WHERE id=?", (a["id"],)).fetchone()[0], "manual")
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM prospect_steps WHERE prospect_id=? AND status='pending'", (a["id"],)).fetchone()[0], 0)
+        calls = []
+        n = popload.run(con, post=lambda p, k: calls.append(k) or {"id": "r"}, now=NOW, enabled=True, log=lambda *_: None)
+        self.assertEqual((n, calls), (0, []))                                            # nothing is ever sent to them
+        self.assertEqual(popload.apply_action(con, a["id"], "approve"), "Only verified prospects with an email can be approved.")
+        popload.apply_action(con, a["id"], "reconsider")
+        self.assertEqual(con.execute("SELECT status FROM prospects WHERE id=?", (a["id"],)).fetchone()[0], "verified")
+
+    def test_hold_all_moves_the_waiting_ones_and_leaves_the_rest(self):
+        con = mem(); a, b = self.two(con)
+        prospect(con, name="Gamma", website="gamma.ph", email="g@gamma.ph", status="rejected")
+        popload.apply_action(con, b["id"], "approve")
+        self.assertEqual(popload.hold_ready(con), 1)
+        got = {r["name"]: r["status"] for r in con.execute("SELECT name,status FROM prospects")}
+        self.assertEqual(got, {"Alpha": "manual", "Beta": "approved", "Gamma": "rejected"})
+
+    def test_a_recheck_does_not_touch_handled_prospects(self):
+        con = mem(); a, b = self.two(con); popload.hold_ready(con)
+        self.assertEqual(popload.recheck_if_stale(con), 0)
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM prospects WHERE status='manual'").fetchone()[0], 2)
+
+
+@mock.patch.dict(os.environ, ENV)
+class ProspectExportTests(unittest.TestCase):
+    def test_csv_has_the_useful_columns_and_defuses_formulas(self):
+        from leadagent import poploadui
+        con = mem(); p = prospect(con, name="=HYPERLINK(\"http://evil\")", website="alpha.ph", email="a@alpha.ph")
+        con.execute("UPDATE prospects SET pain='email,order_no', pain_score=12, email_source='https://alpha.ph/pages/contact', claim='+cmd'"); con.commit()
+        prospect(con, name="Other", website="beta.ph", email="b@beta.ph", status="rejected")
+        import csv, io
+        rows = list(csv.DictReader(io.StringIO(poploadui.export_csv(con, "verified"))))
+        self.assertEqual(len(rows), 1); r = rows[0]
+        self.assertTrue(r["Store"].startswith("'=")); self.assertTrue(r["Your list says"].startswith("'+"))
+        self.assertEqual((r["Email"], r["Fit"], r["Fit score"], r["How they ask for proof of payment"]), ("a@alpha.ph", "Hot", "12", "by email, order number needed"))
+        self.assertEqual(len(list(csv.DictReader(io.StringIO(poploadui.export_csv(con, "all"))))), 2)
+
+    def test_page_offers_the_download_the_filter_and_the_bulk_button(self):
+        from leadagent import poploadui
+        con = mem(); prospect(con)
+        page = poploadui.render_page(con, "tok", show="verified")
+        for want in ("/prospects.csv?show=verified", "Handled personally", "Take all 1 waiting prospects out of the email sequence", "Handle personally"):
+            self.assertIn(want, page)

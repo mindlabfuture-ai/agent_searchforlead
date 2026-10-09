@@ -428,6 +428,14 @@ def set_email(con, pid, text):
     return f"Email set to {found[0]}."
 
 
+def hold_ready(con, statuses=("verified", "needs_email")):
+    """Take every prospect that is waiting for approval out of the email sequence: you will handle them yourself. Nothing already sent is
+    undone; anyone already approved is left alone (use the card's button for those). Returns how many were moved."""
+    n = con.execute(f"UPDATE prospects SET status='manual', updated_at=? WHERE status IN ({','.join('?' * len(statuses))})", (db.now(), *statuses)).rowcount
+    con.commit()
+    return n
+
+
 def apply_action(con, pid, action, value=""):
     p = con.execute("SELECT * FROM prospects WHERE id=?", (pid,)).fetchone()
     if not p:
@@ -450,7 +458,11 @@ def apply_action(con, pid, action, value=""):
     elif action == "reject":
         con.execute("UPDATE prospects SET status='rejected', reject_reason='rejected by you', updated_at=? WHERE id=?", (db.now(), pid))
         msg = "Rejected."
-    elif action == "reconsider" and p["status"] == "rejected":
+    elif action == "manual" and p["status"] in ("new", "verified", "needs_email", "approved"):
+        con.execute("UPDATE prospect_steps SET status='skipped', note='handled personally' WHERE prospect_id=? AND status='pending'", (pid,))
+        con.execute("UPDATE prospects SET status='manual', updated_at=? WHERE id=?", (db.now(), pid))
+        msg = "Moved to Handled personally. It will not get the email sequence."
+    elif action == "reconsider" and p["status"] in ("rejected", "manual"):
         con.execute("UPDATE prospects SET status=CASE WHEN email IS NULL OR email='' THEN 'needs_email' ELSE 'verified' END, reject_reason=NULL, updated_at=? WHERE id=?", (db.now(), pid))
         msg = "Moved back for review."
     elif action in ("replied", "won", "lost", "dnc") and p["status"] != "new":
